@@ -1,0 +1,6 @@
+{
+  "_note": "소모품 정의. 수치는 임시값. kind: regen_boost(휴식 회복 속도를 duration 동안 boost_bp 배로). 전열(휴식이 아닌 상태)에서는 효과 시간만 흐른다.",
+
+  "potion":    { "name": "회복 포션",     "kind": "regen_boost", "boost_bp": 40000, "duration": 600, "weight": 1 },
+  "hi_potion": { "name": "상급 회복 포션", "kind": "regen_boost", "boost_bp": 60000, "duration": 900, "weight": 1 }
+}

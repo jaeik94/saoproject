@@ -1,0 +1,181 @@
+{
+  "_note": "전역 전투 규칙. 모든 수치는 임시값. 데이터의 시간은 프레임(60fps), 코어 내부는 틱(1프레임=100틱). 확률·배율은 만분율(10000 = 100%). 칸 좌표는 육각 axial [q, r].",
+
+  "ticks_per_frame": 100,
+  "fps": 60,
+  "time_limit_frames": 18000,
+
+  "arena": {
+    "radius": 5,
+    "ally_spawns": [[-3, 0], [-3, 1], [-2, -1], [-4, 1], [-4, 2], [-2, 1]],
+    "enemy_spawns": [[2, 0], [3, -3], [1, 3], [4, -1], [0, -3], [3, 1]]
+  },
+
+  "footprints": {
+    "_note": "적이 차지하는 칸 (기준 칸에서의 상대 좌표). 방향이 바뀌어도 모양은 그대로",
+    "single": [[0, 0]],
+    "tri3": [[0, 0], [1, 0], [0, 1]],
+    "flower7": [[0, 0], [1, 0], [1, -1], [0, -1], [-1, 0], [-1, 1], [0, 1]]
+  },
+
+  "player": {
+    "base_hp": 55,
+    "hp_per_level": 11,
+    "skill_slots_by_level": [[1, 2], [6, 3], [12, 4], [20, 5]],
+    "level1_stat_points": 10,
+    "weight_limit": 40,
+    "_weight_limit_note": "근력이 무게 한도에 영향을 주는지는 기획서 미결 사항이라 고정값으로 둠"
+  },
+
+  "move": {
+    "cell_frames": 10,
+    "agi_reduction_bp": 150,
+    "max_reduction_bp": 5000,
+    "overweight_penalty_bp": 5000,
+    "max_cells": 3
+  },
+
+  "wait_max_frames": 30,
+
+  "stances": {
+    "guard": {
+      "name": "가드",
+      "startup_frames": 1,
+      "min_hold_frames": 12,
+      "base_bp": 7500,
+      "agi_bonus_bp": 0,
+      "requires_weapon": true,
+      "roll": "attack",
+      "success": { "chip_bp": 1000, "durability_bp": 10000, "defender_stun_bp": 6000, "advantage_frames": 4, "weight_bonus": false },
+      "fail": { "damage_bp": 7000, "extra_stun_frames": 6 }
+    },
+    "parry": {
+      "name": "패리",
+      "startup_frames": 1,
+      "min_hold_frames": 12,
+      "base_bp": 6000,
+      "agi_bonus_bp": 0,
+      "requires_weapon": true,
+      "roll": "hit",
+      "success": { "chip_bp": 0, "durability_bp": 5000, "defender_stun_bp": 3000, "advantage_frames": 12, "weight_bonus": true },
+      "fail": { "damage_bp": 10000, "extra_stun_frames": 12 }
+    },
+    "evade": {
+      "name": "회피",
+      "startup_frames": 1,
+      "min_hold_frames": 12,
+      "base_bp": 3500,
+      "agi_bonus_bp": 100,
+      "requires_weapon": false,
+      "roll": "hit",
+      "success": { "chip_bp": 0, "durability_bp": 0, "defender_stun_bp": 0, "advantage_frames": 22, "weight_bonus": false },
+      "fail": { "damage_bp": 12500, "extra_stun_frames": 20 }
+    }
+  },
+  "min_success_bp": 500,
+  "max_success_bp": 9700,
+
+  "attributes": {
+    "multi":  { "name": "다단", "mods": { "guard": 2000, "evade": -2000 } },
+    "heavy":  { "name": "중량", "mods": { "guard": -2000, "evade": 2000 } },
+    "linear": { "name": "직선", "mods": { "parry": 2000 } },
+    "area":   { "name": "광역", "mods": { "parry": -2000 } }
+  },
+
+  "clash": {
+    "window_frames": 2,
+    "draw_margin_bp": 1000,
+    "str_bonus_bp": 150,
+    "draw_stun_frames": 14,
+    "lose_stun_frames": 24
+  },
+
+  "weight": {
+    "_note": "무기 무게: 상쇄 승리·패리 성공 시 상대에게 주는 추가 경직과 무력화",
+    "stun_ticks_per_weight": 20,
+    "break_per_weight": 1
+  },
+
+  "sizes": {
+    "player": { "hitstun_bp": 10000, "breakable": false, "decay": [10000, 6000, 3000, 1000] },
+    "small":  { "hitstun_bp": 10000, "breakable": false, "decay": [10000, 7000, 4500, 2500, 1000] },
+    "medium": { "hitstun_bp": 7000,  "breakable": true,  "decay": [10000, 6000, 3000, 1000, 0] },
+    "large":  { "hitstun_bp": 4000,  "breakable": true,  "decay": [10000, 4000, 1000, 0] }
+  },
+
+  "durability": {
+    "attack_hit_cost": 1,
+    "armor_hit_cost": 1,
+    "warn_bp": [3000, 1000]
+  },
+
+  "items": {
+    "pouch_use_frames": 20,
+    "inventory_use_frames": 90,
+    "swap_frames": 80,
+    "quick_swap_frames": 25
+  },
+
+  "knowledge": { "approx_round_frames": 5 },
+
+  "hate": {
+    "_note": "정면에 선 상대의 기본 헤이트 (피해량과 같은 단위). 다른 공격자의 기억 길이 안 누적 피해가 이 값을 넘으면 적이 돌아선다",
+    "front": 40
+  },
+
+  "retarget": {
+    "_note": "대상 전환: 방향 전환(적의 turn_speed_bp로 증감)과 재로드가 동시에 진행, 둘 다 끝나야 행동",
+    "turn_frames": 18,
+    "reload_frames": 30,
+    "reload_remembered_frames": 10
+  },
+
+  "rest": {
+    "_note": "휴식(어그로 대상 아님, 행동 중 아님, 적과 인접하지 않음) 중에만 interval마다 regen 회복. 포션은 이 속도를 높인다",
+    "interval_frames": 60,
+    "regen": 1
+  },
+
+  "friendly_fire": { "damage_bp": 5000, "stun_frames": 8 },
+
+  "auto_defense": {
+    "_note": "약공격(weak)에만 적용. 대기·기다리기·태세 유지·이동 중이고 공격자가 시야 구역 안이면 자동 가드/회피 판정. 아군은 근력≥민첩이면 가드, 아니면 회피. 막히면 공격측이 catch 동안 굳는다 (딜레이 캐치)",
+    "base_bp": 2000,
+    "stat_bp": 300,
+    "weak_manual_bp": 9800,
+    "guard_catch_frames": 12,
+    "evade_catch_frames": 18,
+    "ally_vision": 1
+  },
+
+  "howl": {
+    "_note": "방패 모드. mode boost: 사용자 헤이트에 boost만큼 더함 / cut: 다른 공격자의 누적 피해를 cut_bp만큼 깎음. radius 칸 안의 적에게 적용",
+    "startup_frames": 10,
+    "recovery_frames": 16,
+    "cooldown_frames": 300,
+    "radius": 2,
+    "mode": "boost",
+    "boost": 60,
+    "cut_bp": 5000
+  },
+
+  "ai": {
+    "_note": "지능은 기억 길이 하나. 나머지는 기억 길이에서 계수로 뽑는다",
+    "person_rate": 20,
+    "person_cap_bp": 4000,
+    "tech_rate": 60,
+    "tech_cap_bp": 5000,
+    "def_person_bp": 3000,
+    "def_tech_bp": 5000,
+    "trigger_step_bp": 1000,
+    "retention_mult": 3,
+    "capacity_per_frames": 600,
+    "profile_carry_bp": 5000
+  },
+
+  "intelligence": {
+    "low":  { "memory_frames": 180 },
+    "mid":  { "memory_frames": 600 },
+    "high": { "memory_frames": 1800 }
+  }
+}

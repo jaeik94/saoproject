@@ -1,0 +1,15 @@
+# 배치 실행·프레임표 출력 (python -m app.batch, app.frames)
+logs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# 에디터·OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store

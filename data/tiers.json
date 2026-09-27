@@ -1,0 +1,11 @@
+{
+  "_note": "적 난이도 등급 기준 (사용자 정의). 평가 도구(python -m app.tiers)가 enemies.json의 tier와 맞춰 결과를 나란히 보여 준다. sword_hits: 목표 소드 스킬 횟수 [최소, 최대].",
+  "small_weak":  { "name": "소형 약한 적", "sword_hits": [2, 2],
+                   "solo": "피해가 적거나 없음", "party": "단순 작업 수준으로 잡음" },
+  "small_mid":   { "name": "소형 중간 적", "sword_hits": [3, 4],
+                   "solo": "약간의 피해 가능성 큼, 완벽 대처 시 피해 없음", "party": "크게 방심하지 않으면 피해 없음" },
+  "medium_weak": { "name": "중형 약한 적", "sword_hits": [6, 6],
+                   "solo": "완벽 대처해야 피해 적거나 없음, 단순 공격 시 사망 수준", "party": "보통 피해 없음, 모두 평타만 써도 반피 이상 안 입음" },
+  "medium_mid":  { "name": "중형 중간 적", "sword_hits": [10, 12],
+                   "solo": "패턴 대응→딜캐 반복해야 잡음, 완벽 대응해도 확률상 반피 가능", "party": "반드시 피해, 대충 싸우면 전멸 가능" }
+}

@@ -1,0 +1,10 @@
+{
+  "_note": "슬롯 스킬 정의. kind: weapon(무기 계열, 해당 계열 소드 스킬 사용 가능)|defense(태세 성공률 보너스)|equip(장비 착용 조건). 수치는 임시값.",
+
+  "one_handed_sword": { "name": "한손검",     "kind": "weapon", "family": "one_handed_sword" },
+  "rapier":           { "name": "세검",       "kind": "weapon", "family": "rapier" },
+  "weapon_defense":   { "name": "무기 방어",   "kind": "defense", "stance_bonus": { "guard": 800, "parry": 800 } },
+  "acrobatics":       { "name": "경업",       "kind": "defense", "stance_bonus": { "evade": 800 } },
+  "shield_equip":     { "name": "방패 장비",   "kind": "equip" },
+  "light_metal_equip": { "name": "경금속 장비", "kind": "equip" }
+}

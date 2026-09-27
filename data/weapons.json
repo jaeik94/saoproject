@@ -1,0 +1,7 @@
+{
+  "_note": "무기 정의. 수치는 임시값. attack: 공격력, speed_bp: 발생·후딜 감소율(만분율), weight: 무게(상쇄·패리 시 상대 경직·무력화 추가, 소지 무게), durability: 최대 내구도.",
+
+  "small_sword":  { "name": "스몰 소드",   "family": "one_handed_sword", "attack": 20, "speed_bp": 0,    "weight": 8,  "durability": 100 },
+  "anneal_blade": { "name": "아닐 블레이드", "family": "one_handed_sword", "attack": 28, "speed_bp": 300,  "weight": 10, "durability": 140 },
+  "iron_rapier":  { "name": "아이언 레이피어", "family": "rapier",          "attack": 16, "speed_bp": 1500, "weight": 5,  "durability": 70 }
+}

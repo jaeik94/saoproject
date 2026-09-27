@@ -1,0 +1,54 @@
+{
+  "_note": "3인 파티 설정. members 각각은 loadout.json과 같은 형식. 결정 순서는 민첩(agi) 높은 순, 같으면 이 목록 순서. stats는 Lv1 기준 합이 10.",
+
+  "members": [
+    {
+      "name": "탱커",
+      "level": 1,
+      "stats": { "str": 6, "agi": 4 },
+      "skill_slots": ["one_handed_sword", "shield_equip"],
+      "proficiency": { "one_handed_sword": 0 },
+      "sword_skills": ["slant", "vertical"],
+      "weapon": "small_sword",
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": "small_buckler",
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [{ "item": "potion", "count": 2 }],
+      "inventory": []
+    },
+    {
+      "name": "딜러A",
+      "level": 1,
+      "stats": { "str": 4, "agi": 6 },
+      "skill_slots": ["one_handed_sword", "weapon_defense"],
+      "proficiency": { "one_handed_sword": 0 },
+      "sword_skills": ["slant", "vertical"],
+      "weapon": "small_sword",
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [{ "item": "potion", "count": 2 }],
+      "inventory": []
+    },
+    {
+      "name": "딜러B",
+      "level": 1,
+      "stats": { "str": 5, "agi": 5 },
+      "skill_slots": ["rapier", "acrobatics"],
+      "proficiency": { "rapier": 0 },
+      "sword_skills": ["linear", "oblique"],
+      "weapon": "iron_rapier",
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [{ "item": "potion", "count": 2 }],
+      "inventory": []
+    }
+  ]
+}

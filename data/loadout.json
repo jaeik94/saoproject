@@ -1,0 +1,21 @@
+{
+  "_note": "솔로 설정 (파티 1명). 스킬·장비를 바꾸려면 이 파일만 고치면 된다. id는 skills.json / weapons.json / armors.json / items.json / slot_skills.json의 키. stats는 Lv1 기준 합이 rules.player.level1_stat_points(10)여야 한다.",
+
+  "name": "플레이어",
+  "level": 1,
+  "stats": { "str": 5, "agi": 5 },
+
+  "skill_slots": ["one_handed_sword", "weapon_defense"],
+  "proficiency": { "one_handed_sword": 0 },
+  "sword_skills": ["slant", "vertical"],
+
+  "weapon": "small_sword",
+  "spare_weapons": ["small_sword"],
+  "armor": "leather_coat",
+  "shield": null,
+  "quick_change": false,
+
+  "pouch_capacity": 2,
+  "pouch": [{ "item": "potion", "count": 2 }],
+  "inventory": [{ "item": "potion", "count": 3 }]
+}
