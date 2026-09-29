@@ -9,7 +9,12 @@ HIT = "hit"                  # 명중 (value=피해)
 MISS_ZONE = "miss_zone"      # 장소 지정 공격이 빗나감
 STANCE_OK = "stance_ok"      # 태세 성공 (ref=태세, value=성공률)
 STANCE_FAIL = "stance_fail"
-CLASH = "clash"              # 상쇄 (ref=win|draw|lose, 공격측 기준)
+PARRY = "parry"              # 패리(상쇄)로 적의 타격 하나를 막음 (actor=아군, ref=적 공격, value=막은 타 수, info=전체 타 수)
+CLASH = "clash"              # 패리로 적 기술의 모든 타를 막은 뒤 위력 비교 (actor=아군, ref=win|draw|lose)
+KNOCKDOWN = "knockdown"      # 넘어짐 (actor=넘어진 쪽, ref=공격, value=기상까지 틱)
+KNOCKBACK = "knockback"      # 밀려남 (value=칸 수)
+EXPOSED = "exposed"          # 공격이 막혀 굳은 동안 약점이 드러남 (value=틱)
+PROVOKE = "provoke"          # 비선공 적이 공격받아 전투에 들어섬
 INTERRUPT = "interrupt"      # 프리모션 중단 (ref=중단된 행동)
 AUTO_OK = "auto_ok"          # 약공격 자동 대응 성공 (actor=방어측, ref=태세, value=확률, info=공격)
 AUTO_FAIL = "auto_fail"

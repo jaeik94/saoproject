@@ -19,79 +19,88 @@
   },
 
   "player": {
+    "_note": "HP ≈ 55 + 42 × (레벨 − 1) (원작 250 + 190 × (레벨 − 1)의 약 0.22배). carry_limit: 인벤토리 소지 무게 한도 (근력 연동 여부는 미결이라 고정값)",
     "base_hp": 55,
-    "hp_per_level": 11,
+    "hp_per_level": 42,
     "skill_slots_by_level": [[1, 2], [6, 3], [12, 4], [20, 5]],
     "level1_stat_points": 10,
-    "weight_limit": 40,
-    "_weight_limit_note": "근력이 무게 한도에 영향을 주는지는 기획서 미결 사항이라 고정값으로 둠"
+    "carry_limit": 40
   },
 
   "move": {
     "cell_frames": 10,
     "agi_reduction_bp": 150,
     "max_reduction_bp": 5000,
-    "overweight_penalty_bp": 5000,
+    "carry_over_penalty_bp": 5000,
     "max_cells": 3
   },
 
   "wait_max_frames": 30,
 
   "stances": {
+    "_note": "방어 태세는 가드와 회피 둘. 패리는 태세가 아니라 소드 스킬 판정을 맞추는 공격이다 (parry 참고). 가드는 근력, 회피는 민첩에 비례",
     "guard": {
       "name": "가드",
       "startup_frames": 1,
       "min_hold_frames": 12,
-      "base_bp": 7500,
+      "base_bp": 6500,
+      "str_bonus_bp": 150,
       "agi_bonus_bp": 0,
       "requires_weapon": true,
       "roll": "attack",
-      "success": { "chip_bp": 1000, "durability_bp": 10000, "defender_stun_bp": 6000, "advantage_frames": 4, "weight_bonus": false },
+      "success": { "chip_bp": 1000, "defender_stun_bp": 6000, "advantage_frames": 4 },
       "fail": { "damage_bp": 7000, "extra_stun_frames": 6 }
-    },
-    "parry": {
-      "name": "패리",
-      "startup_frames": 1,
-      "min_hold_frames": 12,
-      "base_bp": 6000,
-      "agi_bonus_bp": 0,
-      "requires_weapon": true,
-      "roll": "hit",
-      "success": { "chip_bp": 0, "durability_bp": 5000, "defender_stun_bp": 3000, "advantage_frames": 12, "weight_bonus": true },
-      "fail": { "damage_bp": 10000, "extra_stun_frames": 12 }
     },
     "evade": {
       "name": "회피",
       "startup_frames": 1,
       "min_hold_frames": 12,
       "base_bp": 3500,
+      "str_bonus_bp": 0,
       "agi_bonus_bp": 100,
       "requires_weapon": false,
       "roll": "hit",
-      "success": { "chip_bp": 0, "durability_bp": 0, "defender_stun_bp": 0, "advantage_frames": 22, "weight_bonus": false },
+      "success": { "chip_bp": 0, "defender_stun_bp": 0, "advantage_frames": 22 },
       "fail": { "damage_bp": 12500, "extra_stun_frames": 20 }
     }
   },
   "min_success_bp": 500,
   "max_success_bp": 9700,
 
-  "attributes": {
-    "multi":  { "name": "다단", "mods": { "guard": 2000, "evade": -2000 } },
-    "heavy":  { "name": "중량", "mods": { "guard": -2000, "evade": 2000 } },
-    "linear": { "name": "직선", "mods": { "parry": 2000 } },
-    "area":   { "name": "광역", "mods": { "parry": -2000 } }
-  },
-
-  "clash": {
+  "parry": {
+    "_note": "패리(상쇄): 내 소드 스킬의 판정을 적의 판정에 window 안으로 맞추면 확률 없이 피해 0. 적 기술의 모든 타를 막았을 때만 위력(근력·중량 보정) 비교: 이기면 적 경직(+무기 무게 스탯), 비기면 둘 다 경직, 지면 경직 + 밀려남. 일부만 막으면(부분 패리) 막은 타만 무효",
     "window_frames": 2,
     "draw_margin_bp": 1000,
     "str_bonus_bp": 150,
     "draw_stun_frames": 14,
-    "lose_stun_frames": 24
+    "lose_stun_frames": 24,
+    "lose_knockback_cells": 1
+  },
+
+  "heavy": {
+    "_note": "중량 태그가 붙은 공격: 가드했을 때 칩 피해·가드 경직·장비 내구도 소모가 커지고, 패리 위력 비교에서 유리",
+    "chip_bp": 20000,
+    "guard_stun_bp": 15000,
+    "durability_bp": 15000,
+    "parry_power_bp": 12000
+  },
+
+  "knockdown": {
+    "_note": "넘어짐: 기상할 때까지 행동·가드·자동 대응 불가, 방향이 풀림(모든 방향을 후면으로 본다). 가드로 막으면 걸리지 않는다. 아군 기상 시간은 착용 무게 0.1당 wear_bp만큼 늘어난다. 넘어짐 저항(신발)은 아직 없음",
+    "getup_frames": 45,
+    "wear_bp": 20
+  },
+
+  "wear": {
+    "_note": "착용 무게(0.1 단위): 무기·방패·방어구 무게 합. 한도 = base_limit + 근력 × per_str (= 6 + 근력 × 0.6). 넘으면 이동과 공격 프레임에 배수 1 + linear·r + quad·r² (r = 초과 비율)",
+    "base_limit": 60,
+    "per_str": 6,
+    "linear": 2,
+    "quad": 10
   },
 
   "weight": {
-    "_note": "무기 무게: 상쇄 승리·패리 성공 시 상대에게 주는 추가 경직과 무력화",
+    "_note": "무기의 무게 스탯(강화 항목): 패리 승리 시 상대에게 주는 추가 경직과 무력화. 착용 무게와는 다른 값",
     "stun_ticks_per_weight": 20,
     "break_per_weight": 1
   },
@@ -104,8 +113,12 @@
   },
 
   "durability": {
-    "attack_hit_cost": 1,
-    "armor_hit_cost": 1,
+    "_note": "내구도는 아이템 기획서 수치의 10배 정수. 소드 스킬 1타 1, 일반 공격 0.5, 패리 2, 가드 3 (방패가 있으면 방패가 대신), 방어구는 방어력으로 줄인 피해에 비례",
+    "skill_hit": 10,
+    "basic_hit": 5,
+    "parry": 20,
+    "guard": 30,
+    "armor_per_damage": 10,
     "warn_bp": [3000, 1000]
   },
 
@@ -139,7 +152,7 @@
   "friendly_fire": { "damage_bp": 5000, "stun_frames": 8 },
 
   "auto_defense": {
-    "_note": "약공격(weak)에만 적용. 대기·기다리기·태세 유지·이동 중이고 공격자가 시야 구역 안이면 자동 가드/회피 판정. 아군은 근력≥민첩이면 가드, 아니면 회피. 막히면 공격측이 catch 동안 굳는다 (딜레이 캐치)",
+    "_note": "일반 공격(weak)에만 적용. 대기·기다리기·태세 유지·이동 중이고 공격자가 시야 구역 안이면 자동 가드/회피 판정. 아군은 근력≥민첩이면 가드, 아니면 회피. 막히면 공격측이 catch 동안 굳는다 (딜레이 캐치)",
     "base_bp": 2000,
     "stat_bp": 300,
     "weak_manual_bp": 9800,

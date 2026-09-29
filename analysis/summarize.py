@@ -67,7 +67,10 @@ def main() -> None:
 
     print("\n■ 공방·헤이트 사건 (판당)")
     rows = {
-        "상쇄": per_battle(ev["event"] == "clash"),
+        "패리 (막은 타)": per_battle(ev["event"] == "parry"),
+        "패리 위력 비교": per_battle(ev["event"] == "clash"),
+        "넘어짐": per_battle(ev["event"] == "knockdown"),
+        "밀려남": per_battle(ev["event"] == "knockback"),
         "아군이 프리모션 끊음": per_battle((ev["event"] == "interrupt") & ally),
         "적이 프리모션 끊음": per_battle((ev["event"] == "interrupt") & enemy),
         "적의 즉시 반응(태세)": per_battle(ev["event"] == "react"),

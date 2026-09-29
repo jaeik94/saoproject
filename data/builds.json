@@ -1,0 +1,197 @@
+{
+  "_note": "무기별 1:1 평가용 솔로 빌드 (Lv1, 스탯 합 10, 가죽 코트). 착용 한도(6 + 근력 × 0.6) 안에 들도록 근력을 정했다: 양손검 8 + 1 = 9 ≤ 9.6, 양손도끼 10 + 1 = 11 ≤ 11.4. 수치는 임시값. python -m app.builds 가 사용한다.",
+  "builds": [
+    {
+      "level": 1,
+      "proficiency": {
+        "one_handed_sword": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "한손검",
+      "stats": {
+        "str": 5,
+        "agi": 5
+      },
+      "skill_slots": [
+        "one_handed_sword",
+        "weapon_defense"
+      ],
+      "sword_skills": [
+        "slant",
+        "vertical"
+      ],
+      "weapon": "small_sword"
+    },
+    {
+      "level": 1,
+      "proficiency": {
+        "one_handed_mace": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "한손 둔기",
+      "stats": {
+        "str": 6,
+        "agi": 4
+      },
+      "skill_slots": [
+        "one_handed_mace",
+        "weapon_defense"
+      ],
+      "sword_skills": [
+        "power_strike",
+        "heavy_crush"
+      ],
+      "weapon": "small_mace"
+    },
+    {
+      "level": 1,
+      "proficiency": {
+        "rapier": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "세검",
+      "stats": {
+        "str": 3,
+        "agi": 7
+      },
+      "skill_slots": [
+        "rapier",
+        "acrobatics"
+      ],
+      "sword_skills": [
+        "linear",
+        "oblique"
+      ],
+      "weapon": "iron_rapier"
+    },
+    {
+      "level": 1,
+      "proficiency": {
+        "spear": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "창",
+      "stats": {
+        "str": 5,
+        "agi": 5
+      },
+      "skill_slots": [
+        "spear",
+        "weapon_defense"
+      ],
+      "sword_skills": [
+        "thrust",
+        "long_strike"
+      ],
+      "weapon": "short_spear"
+    },
+    {
+      "level": 1,
+      "proficiency": {
+        "two_handed_sword": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "양손검",
+      "stats": {
+        "str": 6,
+        "agi": 4
+      },
+      "skill_slots": [
+        "two_handed_sword",
+        "weapon_defense"
+      ],
+      "sword_skills": [
+        "wide_sweep",
+        "blast"
+      ],
+      "weapon": "two_hand_sword"
+    },
+    {
+      "level": 1,
+      "proficiency": {
+        "two_handed_axe": 0
+      },
+      "spare_weapons": [],
+      "armor": "leather_coat",
+      "shield": null,
+      "quick_change": false,
+      "pouch_capacity": 2,
+      "pouch": [
+        {
+          "item": "potion",
+          "count": 2
+        }
+      ],
+      "inventory": [],
+      "name": "양손도끼",
+      "stats": {
+        "str": 9,
+        "agi": 1
+      },
+      "skill_slots": [
+        "two_handed_axe",
+        "weapon_defense"
+      ],
+      "sword_skills": [
+        "heavy_chop",
+        "ground_crash"
+      ],
+      "weapon": "battle_axe"
+    }
+  ]
+}

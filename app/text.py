@@ -65,9 +65,19 @@ class EventText:
             return f"  {who}: {self.n(e.ref)} 성공{chance}"
         if ev == L.STANCE_FAIL:
             return f"  {who}: {self.n(e.ref)} 실패 ({e.value / 100:.0f}%)"
+        if ev == L.PARRY:
+            return f"  ⚔ {who}: 패리! {self.n(e.ref)} {e.value}/{e.info}타 막음"
         if ev == L.CLASH:
-            res = {"win": "상쇄 승리", "draw": "상쇄 무승부", "lose": "상쇄 패배"}[e.ref]
+            res = {"win": "위력 비교 승리 — 적이 튕겨남", "draw": "위력 비교 무승부 — 둘 다 굳음", "lose": "위력 비교 패배 — 밀려남"}[e.ref]
             return f"  ⚔ {who}: {res} [{e.info}]"
+        if ev == L.KNOCKDOWN:
+            return f"  ✖ {who}이(가) {self.n(e.ref)}에 넘어졌다 (기상까지 {self.frames(e.value)}f)"
+        if ev == L.KNOCKBACK:
+            return f"  {who}이(가) {e.value}칸 밀려났다"
+        if ev == L.EXPOSED:
+            return f"  ◆ {who}이(가) 막혀 굳으며 약점이 드러났다 ({self.frames(e.value)}f 동안 방어 무시)"
+        if ev == L.PROVOKE:
+            return f"  ! {who}이(가) {self.who.get(e.ref, e.ref)}에게 건드려져 전투에 들어섰다"
         if ev == L.INTERRUPT:
             return f"  {who}이(가) {self.who.get(e.info, e.info)}의 {self.n(e.ref)} 프리모션을 끊었다!"
         if ev == L.AUTO_OK:
@@ -97,7 +107,7 @@ class EventText:
         if ev == L.SWAP:
             return f"  {who}: {self.n(e.ref)}(으)로 교체 (내구도 {e.value})"
         if ev == L.DURABILITY_WARN:
-            return f"  ⚠ {who}의 {self.n(e.ref)} 내구도 경고: {e.value}"
+            return f"  ⚠ {who}의 {self.n(e.ref)} 내구도 경고: {e.value // 10}"
         if ev == L.EQUIP_BROKEN:
             return f"  ✖ {who}의 {self.n(e.ref)} 파괴!"
         if ev == L.RELOAD:

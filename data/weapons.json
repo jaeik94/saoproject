@@ -1,7 +1,11 @@
 {
-  "_note": "무기 정의. 수치는 임시값. attack: 공격력, speed_bp: 발생·후딜 감소율(만분율), weight: 무게(상쇄·패리 시 상대 경직·무력화 추가, 소지 무게), durability: 최대 내구도.",
+  "_note": "무기 정의 (1층 하급, 상점 판매 기준). 수치는 임시값. physical: 물리 속성(slash 참격, thrust 찌르기, blunt 타격, pierce 관통), attack: 공격력, speed_bp: 발생·후딜 감소율(만분율, 음수면 느려짐), weight_stat: 무게 스탯(패리 승리 시 상대 경직·무력화 증가), wear_weight: 착용 무게(0.1 단위), min_str: 최소 근력(모자라면 장비 불가), durability: 최대 내구도(아이템 기획서 수치 × 10). 정확(치명타) 스탯은 규칙이 없어 아직 넣지 않았다.",
 
-  "small_sword":  { "name": "스몰 소드",   "family": "one_handed_sword", "attack": 20, "speed_bp": 0,    "weight": 8,  "durability": 100 },
-  "anneal_blade": { "name": "아닐 블레이드", "family": "one_handed_sword", "attack": 28, "speed_bp": 300,  "weight": 10, "durability": 140 },
-  "iron_rapier":  { "name": "아이언 레이피어", "family": "rapier",          "attack": 16, "speed_bp": 1500, "weight": 5,  "durability": 70 }
+  "small_sword":    { "name": "스몰 소드",     "family": "one_handed_sword", "physical": "slash",  "attack": 20, "speed_bp": 0,     "weight_stat": 8,  "wear_weight": 40,  "min_str": 2, "durability": 6300 },
+  "anneal_blade":   { "name": "아닐 블레이드",  "family": "one_handed_sword", "physical": "slash",  "attack": 28, "speed_bp": 300,   "weight_stat": 10, "wear_weight": 40,  "min_str": 2, "durability": 6300 },
+  "small_mace":     { "name": "스몰 메이스",    "family": "one_handed_mace",  "physical": "blunt",  "attack": 18, "speed_bp": 0,     "weight_stat": 10, "wear_weight": 50,  "min_str": 2, "durability": 6300 },
+  "iron_rapier":    { "name": "아이언 레이피어", "family": "rapier",           "physical": "thrust", "attack": 16, "speed_bp": 1500,  "weight_stat": 5,  "wear_weight": 20,  "min_str": 1, "durability": 6300 },
+  "short_spear":    { "name": "숏 스피어",      "family": "spear",            "physical": "pierce", "attack": 19, "speed_bp": 0,     "weight_stat": 9,  "wear_weight": 60,  "min_str": 2, "durability": 6300 },
+  "two_hand_sword": { "name": "투핸드 소드",    "family": "two_handed_sword", "physical": "slash",  "attack": 26, "speed_bp": -1000, "weight_stat": 12, "wear_weight": 80,  "min_str": 3, "durability": 6300 },
+  "battle_axe":     { "name": "배틀 액스",      "family": "two_handed_axe",   "physical": "slash",  "attack": 24, "speed_bp": -1500, "weight_stat": 16, "wear_weight": 100, "min_str": 4, "durability": 6300 }
 }

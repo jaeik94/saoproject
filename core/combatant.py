@@ -21,6 +21,7 @@ TURN = "turn"              # 적: 대상 쪽으로 방향 전환
 RETARGET = "retarget"      # 적: 대상 전환 (방향 전환 + 재로드)
 HITSTUN = "hitstun"
 BROKEN = "broken"          # 무력화 (다운)
+KNOCKDOWN = "knockdown"    # 넘어짐 (기상할 때까지 행동·가드 불가)
 DEAD = "dead"
 
 WAKEABLE = (READY, WAIT, STANCE_HOLD)
@@ -44,6 +45,10 @@ class ActionState:
     place_cells: list[Hex] = field(default_factory=list)  # 장소 지정 공격의 영향 칸 (시작 시 고정)
     defended: bool = False    # 방어측 딜레이 이득을 이미 적용했는가 (공격당 1회)
     guard_locked: list[int] = field(default_factory=list)  # 가드 성공한 방어자 (나머지 타격은 판정 없이 막힘)
+    parried: list[bool] = field(default_factory=list)      # 이 공격의 타격 중 패리당한 것
+    parrier: int = NO_TARGET                                # 패리한 아군
+    parry_power_self: int = 0                               # 패리당한 타격들의 위력 합
+    parry_power_other: int = 0                              # 패리에 쓰인 아군 타격들의 위력 합
     ref: str = ""             # 태세 종류, 아이템 id 등
     arg: int = 0              # 아이템 출처(0 파우치, 1 인벤토리), 예비 무기 인덱스
     dest: Hex = (0, 0)        # 이동 목적지
@@ -105,14 +110,16 @@ class Combatant:
     sword_skills: tuple[AttackDef, ...] = ()
     slot_skills: tuple[str, ...] = ()
     quick_change: bool = False
-    total_weight: int = 0
+    carry_weight: int = 0     # 인벤토리 소지 무게
     # 적
     enemy_def: EnemyDef | None = None
     target: int = NO_TARGET
     pattern: int = 0
     step: int = 0
     reaction: int = NO_TARGET  # 반응할 공격을 시작한 아군 (없으면 NO_TARGET)
-    catch_target: int = NO_TARGET  # 약공격을 막아 낸 뒤 딜레이 캐치할 상대
+    catch_target: int = NO_TARGET  # 일반 공격을 막아 낸 뒤 딜레이 캐치할 상대
+    provoked: bool = True     # 비선공 적은 공격받기 전까지 False
+    exposed_until: int = 0    # 이 틱까지 방향 보정·방어력 무시 (공격이 막혀 굳은 동안)
 
     @property
     def alive(self) -> bool:
@@ -123,6 +130,15 @@ class Combatant:
         if self.is_ally:
             return self.weapon.weapon.attack if self.weapon else 0
         return self.base_power
+
+    @property
+    def wear_weight(self) -> int:
+        """착용 무게 (0.1 단위): 무기·방패·방어구."""
+        total = self.weapon.weapon.wear_weight if self.weapon else 0
+        for a in (self.armor, self.shield):
+            if a is not None:
+                total += a.wear_weight
+        return total
 
     @property
     def weapon_family(self) -> str:

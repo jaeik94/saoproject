@@ -16,6 +16,7 @@ from app.loader import load_setup
 from app.text import EventText
 from core.battle import Battle
 from core.combatant import Combatant
+from core.formulas import wear_limit
 from core.hexgrid import DIRS, Hex, disc
 from core.preview import UNKNOWN_END, DecisionRequest, OptionView, Timeline
 
@@ -33,15 +34,18 @@ UNKNOWN_DRAW_FRAMES = 14
 SEG_COLOR = {
     "premotion": "#5cb85c", "active": "#e0443c", "recovery": "#3f6fc4",
     "stance": "#e8b93c", "move": "#9b7fd0", "item": "#b08a5a", "swap": "#b08a5a",
-    "wait": "#d8d8d8", "idle": "#eeeeee", "hitstun": "#f0a040", "broken": "#666666",
+    "wait": "#d8d8d8", "idle": "#eeeeee", "hitstun": "#f0a040", "broken": "#666666", "knockdown": "#8b5a2b",
     "turn": "#8e6bbf", "reload": "#c9a7e6",
 }
 LEGEND = (("premotion", "발생"), ("active", "판정"), ("recovery", "후딜"), ("stance", "태세"), ("hitstun", "경직"),
+          ("knockdown", "넘어짐"),
           ("move", "이동"), ("turn", "방향 전환"), ("reload", "재로드"), ("wait", "대기"))
+PHYSICAL_NAMES = {"slash": "참격", "thrust": "찌르기", "blunt": "타격", "pierce": "관통", "": ""}
+STYLE_NAMES = {"single": "단타", "combo": "연격", "rush": "돌진"}
 BUSY_NAMES = {
     "ready": "대기", "wait": "기다림", "stance": "태세", "stance_hold": "태세 유지", "attack": "공격", "move": "이동",
     "item": "아이템", "swap": "무기 교체", "howl": "하울", "turn": "방향 전환", "retarget": "대상 전환",
-    "hitstun": "경직", "broken": "무력화", "dead": "쓰러짐", "premotion": "프리모션", "active": "판정", "recovery": "후딜",
+    "hitstun": "경직", "broken": "무력화", "knockdown": "넘어짐", "dead": "쓰러짐", "premotion": "프리모션", "active": "판정", "recovery": "후딜",
 }
 
 
@@ -57,8 +61,8 @@ def option_detail(o: OptionView, tx: EventText) -> str:
         bits.append(f"첫 타 {tx.frames(o.first_hit_in_t)}f")
     if o.before_enemy_hit is not None:
         bits.append("프리모션 끊기 가능" if o.before_enemy_hit else "끊기 불가")
-    if o.clash_timing:
-        bits.append("상쇄 타이밍!")
+    if o.parry_total > 0:
+        bits.append(f"패리 {o.parry_hits}/{o.parry_total}타" + ("!" if o.clash_timing else ""))
     if o.punish is not None:
         bits.append("반격 성립" if o.punish else "반격 늦음")
     if o.chance_lo >= 0:
@@ -281,7 +285,10 @@ class BattleWindow:
         if c.is_ally and c.alive:
             parts.append(f"자동 {b.rules.stance(b.auto_kind(c)).name}")
             w = c.weapon
-            parts.append(f"{w.weapon.name} {w.durability}/{w.weapon.durability}" if w else "무기 없음")
+            parts.append(f"{w.weapon.name} {w.durability // 10}/{w.weapon.durability // 10}" if w else "무기 없음")
+            limit = wear_limit(b.rules, c)
+            if c.wear_weight > limit:
+                parts.append(f"착용 무게 초과 {c.wear_weight / 10:.1f}/{limit / 10:.1f}")
             if b.is_resting(c):
                 parts.append("휴식 중" + (" (포션)" if b.now < c.boost_until else ""))
             cds = [f"{s.name} {self.tx.frames(c.cooldowns[s.id] - b.now)}f" for s in c.sword_skills if c.cooldowns.get(s.id, 0) > b.now]
@@ -289,7 +296,7 @@ class BattleWindow:
                 parts.append("쿨링 " + ", ".join(cds))
         elif c.alive and c.enemy_def:
             t = b.fighters[c.target] if c.target >= 0 else None
-            parts.append(f"대상 → {t.name if t else '-'}")
+            parts.append(f"대상 → {t.name if t else ('없음 (비선공)' if not c.provoked else '-')}")
             if b.rules.size(c.size).breakable:
                 parts.append(f"무력화 {c.break_gauge}/{c.enemy_def.break_max}")
         return " | ".join(parts)
@@ -304,7 +311,8 @@ class BattleWindow:
         target = "나" if t.targeting == "person" else "내가 선 칸 (장소 지정)"
         s = f"⚠ {who}의 공격: 약 {tx.frames(t.approx_hit_in_t)}f 후, 대상 {target}"
         if t.known:
-            attrs = ", ".join(b.rules.attribute(a).name for a in t.attributes) or "속성 없음"
+            attrs = ", ".join(x for x in (STYLE_NAMES.get(t.style, ""), PHYSICAL_NAMES.get(t.physical, ""),
+                                          "중량" if t.heavy else "") if x)
             s += f"\n   [정보] {t.name} ({attrs}), 남은 {t.hits_left}타, 정확히 {tx.frames(t.hit_in_t)}f 후, 후딜 종료 {tx.frames(t.enemy_free_in_t)}f 후"
         if len(req.threats) > 1:
             s += f"\n   외 {len(req.threats) - 1}개의 공격이 더 오고 있음"
@@ -416,7 +424,7 @@ class BattleWindow:
                 t = b.fighters[row.target].name if row.target >= 0 else "-"
                 name += f" → {t}" + (f" 전환 {tx.frames(row.retarget_left_t)}f" if row.retarget_left_t else "")
                 if my_y is not None and line.hits_exact and row.target == req.actor:
-                    w = b.rules.clash_window_t
+                    w = b.rules.parry.window_t
                     for h in line.hits_t:
                         c.create_rectangle(x(h - w), my_y + 1, x(h + w), my_y + TL_ROW_H - 1, fill="#fde2e0", outline="")
             c.create_text(8, (y0 + y1) / 2, text=("▶ " if me else "") + name, anchor="w",

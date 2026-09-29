@@ -1,172 +1,117 @@
 {
-  "_note": "적 정의. 수치는 임시값. 피해 기준: 약공격 정타 = 플레이어 체력 약 10%, 프리모션 있는 기술 = 약공격의 3배 이상(약 30%), 강공격 약 45%. vision: 약공격 자동 대응 방향 구역 (0 정면, 1 앞쪽 측면, 2 뒤쪽 측면(짐승형), 3 후면까지), auto_defense_bp: 자동 대응 기본 확률(태세 목록의 첫 번째 태세로), attacks[].weak: 약공격(몬스터마다 하나). size: small|medium|large (medium 이상만 무력화), footprint: rules.footprints 키, intelligence: rules.intelligence 키(기억 길이). stances: 쓸 수 있는 대응 태세 (소드 스킬 미사용 1개, 사용 2개, high_grade 3개까지, 패리는 high_grade만). tier: 등급 (small_weak|small_mid|medium_weak|medium_mid, 평가 도구가 기준표와 맞춤), patterns: 반복하는 공격 순서 (공격 id 또는 'wait:프레임'), 대상이 바뀌면 다른 패턴을 처음부터. surround_attack: 인접한 아군이 surround_count 이상이면 우선 사용. hits[].durability: 막았을 때 방어측 장비 내구도 피해. reaction_frames: 트리거 공격을 보고 태세로 대응하기까지의 반응 시간. turn_speed_bp: 방향 전환 시간 감소율 (음수면 느림).",
+  "_note": "적 정의 (1층 1구획, docs/monsters.md). 1구획 몬스터는 일반 공격 · 약한 기술 · 강한 기술 3종만 쓴다. 새로 만든 기술(엄니 올려치기, 급강하 찌르기, 뿔 치기)과 수치는 임시값. 피해 기준(적 공격력 7, 플레이어 체력 55·방어 1): 일반 공격 정타 약 10%, 프리모션 있는 기술 약 30%, 강공격 약 45%.",
+  "_fields": "tier: 등급(small_weak|small_mid|medium_weak|medium_mid, 평가 도구가 data/tiers.json 기준과 맞춤). size: small|medium|large (medium 이상만 무력화). footprint: rules.footprints 키. intelligence: rules.intelligence 키(기억 길이). stances: 대응 태세 (가드·회피 중 소드 스킬 미사용 1개, 사용·고등급 2개. 적은 패리를 쓰지 않는다). vision: 일반 공격 자동 대응 방향 구역 (0 정면, 1 앞쪽 측면, 2 뒤쪽 측면, 3 후면까지). auto_defense_bp: 자동 대응 기본 확률(태세 목록의 첫 번째). sector_damage_bp: 받는 피해 배율 [정면, 앞쪽 측면, 뒤쪽 측면, 후면] (고유 특징). passive: 비선공. exposed_on_defended: 공격이 가드·회피로 막혀 굳은 동안 방향 보정·방어력 무시. pack: 무리 행동. getup_frames: 넘어졌을 때 기상 시간. patterns: 반복하는 공격 순서 (공격 id 또는 'wait:프레임'), 대상이 바뀌면 다른 패턴을 처음부터. surround_attack: 인접한 아군이 surround_count 이상이면 우선 사용. reaction_frames: 트리거 공격을 보고 태세로 대응하기까지. turn_speed_bp: 방향 전환 시간 감소율 (음수면 느림). attacks[]: weak 일반 공격(몬스터마다 하나), physical 물리 속성, heavy 중량, knockdown_bp 넘어짐 확률, lunge 돌진.",
+
+  "frenzy_boar": {
+    "name": "프렌지 보어", "tier": "medium_weak",
+    "_trait": "원작. 중형, 단독. 가장 약한 적이지만 체력이 크고 공격은 약하다. 비선공, 약점은 뒤통수(후면 피해 증가), 덩치에 비해 빠른 돌진에 맞으면 넘어진다",
+    "size": "medium", "footprint": "tri3", "intelligence": "low",
+    "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 15000], "passive": true, "pack": false, "getup_frames": 60,
+    "hp": 180, "attack": 4, "defense": 1, "clash_bonus_bp": 0,
+    "reaction_frames": 8, "move_frames": 14, "turn_speed_bp": -3000,
+    "break_max": 100, "break_down_frames": 120,
+    "patterns": [
+      ["gore", "wait:20", "tusk", "gore", "charge", "wait:25", "gore", "wait:20"]
+    ],
+    "attacks": [
+      { "id": "gore", "name": "들이받기", "weak": true, "physical": "blunt",
+        "range": [1, 1], "startup": 14, "active": 3, "recovery": 20, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 18 }] },
+      { "id": "tusk", "name": "엄니 올려치기", "physical": "pierce",
+        "range": [1, 1], "startup": 16, "active": 3, "recovery": 22, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 20 }] },
+      { "id": "charge", "name": "돌진", "physical": "blunt", "heavy": true, "knockdown_bp": 10000,
+        "range": [1, 3], "startup": 20, "active": 6, "recovery": 32, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 2, "power_bp": 37200, "hitstun": 34 }] }
+    ]
+  },
 
   "dire_wolf": {
     "name": "다이어 울프", "tier": "small_mid",
+    "_trait": "원작. 소형, 2~3마리. 무리가 한 대상을 둘러싸려 한다: 한 마리가 정면을 잡는 동안 나머지가 옆과 뒤로 돈다",
     "size": "small", "footprint": "single", "intelligence": "mid",
     "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 10000], "passive": false, "pack": true, "getup_frames": 40,
     "hp": 105, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
     "reaction_frames": 4, "move_frames": 12, "turn_speed_bp": 0,
-    "surround_attack": "spin", "surround_count": 3,
     "patterns": [
-      ["bite", "snap", "wait:15", "flurry", "bite", "tackle", "wait:20"],
-      ["lunge", "bite", "sweep", "snap", "bite", "wait:15"]
+      ["bite", "paw", "wait:15", "lunge", "paw", "bite", "wait:20"],
+      ["paw", "bite", "paw", "lunge", "wait:15"]
     ],
     "attacks": [
-      { "id": "bite", "name": "물어뜯기",
-        "range": [1, 1], "startup": 12, "active": 3, "recovery": 18, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 26000, "hitstun": 18, "durability": 2 }] },
-      { "id": "snap", "name": "잽 물기", "weak": true,
+      { "id": "paw", "name": "앞발 공격", "weak": true, "physical": "slash",
         "range": [1, 1], "startup": 8, "active": 2, "recovery": 4, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4, "durability": 1 }] },
-      { "id": "flurry", "name": "연속 할퀴기",
-        "range": [1, 1], "startup": 16, "active": 20, "recovery": 22, "cooldown": 0,
-        "attributes": ["multi"], "can_clash": true, "interrupts": true,
-        "hits": [
-          { "at": 0,  "power_bp": 10000, "hitstun": 10, "durability": 1 },
-          { "at": 7,  "power_bp": 8600, "hitstun": 10, "durability": 1 },
-          { "at": 14, "power_bp": 10000, "hitstun": 16, "durability": 1 }] },
-      { "id": "tackle", "name": "몸통 박치기",
-        "range": [1, 1], "startup": 26, "active": 4, "recovery": 30, "cooldown": 0,
-        "attributes": ["heavy"], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 36, "durability": 5 }] },
-      { "id": "lunge", "name": "도약 물기",
-        "range": [2, 3], "startup": 20, "active": 4, "recovery": 26, "cooldown": 0, "lunge": true,
-        "attributes": ["linear"], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 24, "durability": 3 }] },
-      { "id": "sweep", "name": "회전 휩쓸기",
-        "range": [1, 2], "startup": 30, "active": 6, "recovery": 24, "cooldown": 0,
-        "targeting": "place", "area": "disc1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 30, "durability": 3 }] },
-      { "id": "spin", "name": "몸부림",
-        "range": [1, 1], "startup": 16, "active": 6, "recovery": 26, "cooldown": 240,
-        "area": "ring1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 24, "durability": 2 }] }
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4 }] },
+      { "id": "bite", "name": "물어뜯기", "physical": "pierce",
+        "range": [1, 1], "startup": 12, "active": 3, "recovery": 18, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 26000, "hitstun": 18 }] },
+      { "id": "lunge", "name": "도약 물기", "physical": "pierce",
+        "range": [1, 3], "startup": 20, "active": 4, "recovery": 26, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 30 }] }
     ]
   },
 
-  "frenzy_boar": {
-    "name": "프렌지 보어", "tier": "small_weak",
+  "plains_wasp": {
+    "name": "초원 말벌", "tier": "small_weak",
+    "_trait": "원작(계열만 언급). 소형, 3~4마리. 매우 빠르고 체력이 낮다. 약한 찌르기 연타, 대부분 자동 대응으로 막을 수 있는 일반 공격",
+    "size": "small", "footprint": "single", "intelligence": "low",
+    "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 10000], "passive": false, "pack": false, "getup_frames": 40,
+    "hp": 40, "attack": 7, "defense": 0, "clash_bonus_bp": 0,
+    "reaction_frames": 3, "move_frames": 6, "turn_speed_bp": 3000,
+    "patterns": [
+      ["sting", "sting", "double_sting", "wait:10", "sting", "dive_sting", "wait:15", "sting", "sting", "wait:10"]
+    ],
+    "attacks": [
+      { "id": "sting", "name": "침 찌르기", "weak": true, "physical": "thrust",
+        "range": [1, 1], "startup": 6, "active": 2, "recovery": 3, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4 }] },
+      { "id": "double_sting", "name": "두 번 찌르기", "physical": "thrust",
+        "range": [1, 1], "startup": 14, "active": 8, "recovery": 18, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [
+          { "at": 0, "power_bp": 13000, "hitstun": 10 },
+          { "at": 5, "power_bp": 13000, "hitstun": 14 }] },
+      { "id": "dive_sting", "name": "급강하 찌르기", "physical": "thrust",
+        "range": [1, 3], "startup": 20, "active": 4, "recovery": 26, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 28 }] }
+    ]
+  },
+
+  "grass_beetle": {
+    "name": "풀숲 딱정벌레", "tier": "small_mid",
+    "_trait": "원작(계열만 언급). 소형, 단독. 등껍질이 단단해 정면에서 들어가는 피해가 적다 ('위쪽'은 보류). 몸을 굴려 부딪힌다. 넘어뜨리면 뒤집혀 한동안 무방비. 공격이 가드·회피로 막혀 굳은 동안에는 껍질 보정과 방어력이 무시된다",
     "size": "small", "footprint": "single", "intelligence": "low",
     "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
-    "hp": 60, "attack": 7, "defense": 1, "clash_bonus_bp": 0,
-    "reaction_frames": 8, "move_frames": 14, "turn_speed_bp": -2000,
+    "sector_damage_bp": [5000, 10000, 10000, 10000], "passive": false, "pack": false, "getup_frames": 150,
+    "exposed_on_defended": true,
+    "hp": 105, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
+    "reaction_frames": 6, "move_frames": 16, "turn_speed_bp": -2000,
     "patterns": [
-      ["gore", "gore", "wait:20", "charge", "wait:25"]
+      ["nip", "horn", "wait:20", "nip", "roll", "wait:20", "nip", "horn", "wait:15"]
     ],
     "attacks": [
-      { "id": "gore", "name": "들이받기", "weak": true,
+      { "id": "nip", "name": "깨물기", "weak": true, "physical": "pierce",
+        "range": [1, 1], "startup": 10, "active": 2, "recovery": 6, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 6 }] },
+      { "id": "horn", "name": "뿔 치기", "physical": "blunt",
         "range": [1, 1], "startup": 14, "active": 3, "recovery": 20, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 18, "durability": 2 }] },
-      { "id": "charge", "name": "돌진",
-        "range": [1, 3], "startup": 28, "active": 6, "recovery": 32, "cooldown": 0, "lunge": true,
-        "attributes": ["heavy", "linear"], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 37200, "hitstun": 34, "durability": 5 }] }
-    ]
-  },
-
-  "test_medium3": {
-    "name": "시험용 중형 약함(3칸)", "tier": "medium_weak",
-    "size": "medium", "footprint": "tri3", "intelligence": "mid",
-    "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
-    "hp": 180, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
-    "reaction_frames": 6, "move_frames": 16, "turn_speed_bp": -3000,
-    "break_max": 100, "break_down_frames": 120, "rise_attack": "roar",
-    "surround_attack": "spin", "surround_count": 4,
-    "patterns": [
-      ["bite", "snap", "flurry", "wait:15", "tackle", "bite", "sweep"],
-      ["snap", "bite", "tackle", "wait:15", "flurry"]
-    ],
-    "attacks": [
-      { "id": "bite", "name": "물어뜯기",
-        "range": [1, 1], "startup": 12, "active": 3, "recovery": 18, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 26000, "hitstun": 18, "durability": 2 }] },
-      { "id": "snap", "name": "잽 물기", "weak": true,
-        "range": [1, 1], "startup": 8, "active": 2, "recovery": 4, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4, "durability": 1 }] },
-      { "id": "flurry", "name": "연속 할퀴기",
-        "range": [1, 1], "startup": 16, "active": 20, "recovery": 22, "cooldown": 0,
-        "attributes": ["multi"], "can_clash": true, "interrupts": true,
-        "hits": [
-          { "at": 0,  "power_bp": 10000, "hitstun": 10, "durability": 1 },
-          { "at": 7,  "power_bp": 8600, "hitstun": 10, "durability": 1 },
-          { "at": 14, "power_bp": 10000, "hitstun": 16, "durability": 1 }] },
-      { "id": "tackle", "name": "몸통 박치기",
-        "range": [1, 1], "startup": 26, "active": 4, "recovery": 30, "cooldown": 0,
-        "attributes": ["heavy"], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 36, "durability": 5 }] },
-      { "id": "sweep", "name": "회전 휩쓸기",
-        "range": [1, 2], "startup": 30, "active": 6, "recovery": 24, "cooldown": 0,
-        "targeting": "place", "area": "disc1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 30, "durability": 3 }] },
-      { "id": "spin", "name": "몸부림",
-        "range": [1, 1], "startup": 16, "active": 6, "recovery": 26, "cooldown": 240,
-        "area": "ring1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 24, "durability": 2 }] },
-      { "id": "roar", "name": "포효 충격",
-        "range": [1, 1], "startup": 14, "active": 4, "recovery": 20, "cooldown": 0,
-        "area": "ring1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 30, "durability": 2 }] }
-    ]
-  },
-
-  "test_medium7": {
-    "name": "시험용 중형 중간(7칸)", "tier": "medium_mid",
-    "size": "medium", "footprint": "flower7", "intelligence": "high",
-    "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
-    "hp": 330, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
-    "reaction_frames": 4, "move_frames": 20, "turn_speed_bp": -5000,
-    "break_max": 150, "break_down_frames": 120, "rise_attack": "roar",
-    "surround_attack": "spin", "surround_count": 5,
-    "patterns": [
-      ["bite", "tackle", "snap", "flurry", "sweep", "tackle", "wait:10"],
-      ["snap", "bite", "tackle", "bite", "flurry", "wait:10"]
-    ],
-    "attacks": [
-      { "id": "bite", "name": "물어뜯기",
-        "range": [1, 1], "startup": 12, "active": 3, "recovery": 18, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 26000, "hitstun": 18, "durability": 2 }] },
-      { "id": "snap", "name": "잽 물기", "weak": true,
-        "range": [1, 1], "startup": 8, "active": 2, "recovery": 4, "cooldown": 0,
-        "attributes": [], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4, "durability": 1 }] },
-      { "id": "flurry", "name": "연속 할퀴기",
-        "range": [1, 1], "startup": 16, "active": 20, "recovery": 22, "cooldown": 0,
-        "attributes": ["multi"], "can_clash": true, "interrupts": true,
-        "hits": [
-          { "at": 0,  "power_bp": 10000, "hitstun": 10, "durability": 1 },
-          { "at": 7,  "power_bp": 8600, "hitstun": 10, "durability": 1 },
-          { "at": 14, "power_bp": 10000, "hitstun": 16, "durability": 1 }] },
-      { "id": "tackle", "name": "몸통 박치기",
-        "range": [1, 1], "startup": 26, "active": 4, "recovery": 30, "cooldown": 0,
-        "attributes": ["heavy"], "can_clash": true, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 36, "durability": 5 }] },
-      { "id": "sweep", "name": "회전 휩쓸기",
-        "range": [1, 2], "startup": 30, "active": 6, "recovery": 24, "cooldown": 0,
-        "targeting": "place", "area": "disc1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 30, "durability": 3 }] },
-      { "id": "spin", "name": "몸부림",
-        "range": [1, 1], "startup": 16, "active": 6, "recovery": 26, "cooldown": 240,
-        "area": "ring1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 2, "power_bp": 26000, "hitstun": 24, "durability": 2 }] },
-      { "id": "roar", "name": "포효 충격",
-        "range": [1, 1], "startup": 14, "active": 4, "recovery": 20, "cooldown": 0,
-        "area": "ring1",
-        "attributes": ["area"], "can_clash": false, "interrupts": true,
-        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 30, "durability": 2 }] }
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 20 }] },
+      { "id": "roll", "name": "굴러 부딪히기", "physical": "blunt", "heavy": true,
+        "range": [1, 3], "startup": 22, "active": 6, "recovery": 28, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 2, "power_bp": 37200, "hitstun": 28 }] }
     ]
   }
 }

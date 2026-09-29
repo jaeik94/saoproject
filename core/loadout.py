@@ -34,7 +34,7 @@ class PlayerSpec:
     pouch_capacity: int
     pouch: tuple[tuple[str, int], ...]
     inventory: tuple[tuple[str, int], ...]
-    total_weight: int
+    carry_weight: int         # 인벤토리 소지 무게 (착용 무게는 전투 중 장비로 계산)
 
 
 def build_player(data: GameData, raw: dict[str, Any]) -> PlayerSpec:
@@ -77,6 +77,9 @@ def build_player(data: GameData, raw: dict[str, Any]) -> PlayerSpec:
     w_id = raw.get("weapon")
     main = weapon(w_id, "무기") if w_id else None
     spares = tuple(w for w in (weapon(x, "예비 무기") for x in raw.get("spare_weapons", [])) if w is not None)
+    for w in ([main] if main else []) + list(spares):
+        if str_ < w.min_str:
+            errors.append(f"'{w.name}'은 근력 {w.min_str} 이상이어야 장비할 수 있습니다 (현재 {str_})")
 
     sword_skills: list[AttackDef] = []
     for sid in raw.get("sword_skills", []):
@@ -127,15 +130,12 @@ def build_player(data: GameData, raw: dict[str, Any]) -> PlayerSpec:
     if len(pouch) > pouch_capacity:
         errors.append(f"파우치 {len(pouch)}칸 사용: 용량 {pouch_capacity}칸")
 
-    weight = 0
-    for w in ([main] if main else []) + list(spares):
-        weight += w.weight
-    for a in (body, shield):
-        if a:
-            weight += a.weight
+    carry = 0
+    for w in spares:
+        carry += w.wear_weight // 10          # 예비 무기는 소지품 (착용 무게는 0.1 단위)
     for iid, cnt in pouch + inventory:
         if iid in data.items:
-            weight += data.items[iid].weight * cnt
+            carry += data.items[iid].weight * cnt
 
     if errors:
         raise LoadoutError(f"'{raw.get('name', '?')}' 구성 오류:\n  - " + "\n  - ".join(errors))
@@ -146,7 +146,7 @@ def build_player(data: GameData, raw: dict[str, Any]) -> PlayerSpec:
         str_=str_, agi=agi, slot_skills=slots, sword_skills=tuple(sword_skills),
         weapon=main, spare_weapons=spares, armor=body, shield=shield,
         quick_change=bool(raw.get("quick_change", False)),
-        pouch_capacity=pouch_capacity, pouch=pouch, inventory=inventory, total_weight=weight,
+        pouch_capacity=pouch_capacity, pouch=pouch, inventory=inventory, carry_weight=carry,
     )
 
 

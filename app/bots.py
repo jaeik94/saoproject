@@ -12,7 +12,7 @@ from typing import Protocol
 from core.battle import Battle
 from core.combatant import Combatant
 from core.defs import STANCE_ORDER
-from core.formulas import BP, cells_distance, stance_chance, stance_chance_range
+from core.formulas import BP, cells_distance, first_hit_offset, stance_chance
 from core.hexgrid import Hex, sector
 from core.preview import ActionChoice, DecisionRequest, OptionView, ThreatView
 from core.rng import Pcg32
@@ -144,12 +144,14 @@ class PartyBot:
 
 class PerfectBot:
     """완벽 대처 봇 (정보 있음 전제). 대상일 때는 먼저 치지 않고 대응 → 딜레이 캐치·빈틈에만 공격한다.
-    대상이 아니면 적의 시야 밖(자동 대응이 없는 방향)에서 공짜로 친다."""
+    대상이 아니면 적의 시야 밖(자동 대응이 없는 방향)에서 공짜로 친다.
+    대기 중인 적은 자동 대응이 켜져 있으므로, 그때의 일반 공격은 가끔만 넣는다 (임시 규칙)."""
 
     RETREAT_HP_BP = 4000
+    WAIT_POKE_BP = 3000
 
     def __init__(self, seed: int) -> None:
-        self.seed = seed
+        self.rng = Pcg32.seeded(seed, 103)
 
     def choose(self, b: Battle, req: DecisionRequest) -> ActionChoice:
         me = b.fighters[req.actor]
@@ -164,6 +166,8 @@ class PerfectBot:
         attacks = _kinds(req, "skill", "basic")
         # 빈틈 (후딜, 경직, 딜레이 캐치, 대기): 가장 센 것부터
         punish = [o for o in attacks if o.punish]
+        if any(o.choice.kind == "basic" and o.auto_risk_bp != -1 for o in punish) and not self.rng.roll_bp(self.WAIT_POKE_BP):
+            punish = [o for o in punish if not (o.choice.kind == "basic" and o.auto_risk_bp != -1)]
         if punish:
             return max(punish, key=lambda o: (o.choice.kind == "skill", _power(b, o))).choice
 
@@ -203,6 +207,9 @@ class PerfectBot:
         cut = [o for o in _kinds(req, "skill") if o.before_enemy_hit and o.choice.arg == threat.attacker]
         if cut:
             return max(cut, key=lambda o: _power(b, o)).choice
+        parry = [o for o in _kinds(req, "skill") if o.clash_timing and o.choice.arg == threat.attacker]
+        if parry and not threat.weak:
+            return max(parry, key=lambda o: _power(b, o)).choice
         current = me.stance.kind if me.stance is not None and me.busy == "stance_hold" else ""
         offered = {o.choice.ref: o for o in _kinds(req, "stance") if o.stance_in_time is not False}
         kinds = [k for k in STANCE_ORDER if k in offered or k == current]
@@ -211,8 +218,8 @@ class PerfectBot:
         if threat.weak and threat.known:
             # 약공격은 대응하면 거의 확정: 회피 딜캐에 들어갈 빠른 스킬이 있으면 회피, 아니면 가드
             fast = any(s.family == me.weapon_family and me.cooldowns.get(s.id, 0) <= b.now + hit_in
-                       and s.startup_t + s.hits[0].at_t < b.rules.auto.evade_catch_t for s in me.sword_skills)
-            order = ["evade", "guard", "parry"] if fast else ["guard", "parry", "evade"]
+                       and first_hit_offset(b.rules, me, s) < b.rules.auto.evade_catch_t for s in me.sword_skills)
+            order = ["evade", "guard"] if fast else ["guard", "evade"]
             want = next(k for k in order + kinds if k in kinds)
         else:
             want = max(kinds, key=lambda k: (self._score(b, me, k, threat), -STANCE_ORDER.index(k)))
@@ -222,11 +229,7 @@ class PerfectBot:
     def _score(b: Battle, me: Combatant, kind: str, threat: ThreatView) -> tuple[int, int]:
         """(받는 피해 기대값의 음수, 딜레이 이득 기대값). 피해를 먼저 줄이고, 같으면 이득이 큰 쪽."""
         rule = b.rules.stance(kind)
-        if threat.known:
-            p = stance_chance(b.data, me, kind, threat.attributes)
-        else:
-            lo, hi = stance_chance_range(b.data, me, kind, [a.attributes for e in b.enemies if e.enemy_def for a in e.enemy_def.attacks])
-            p = (lo + hi) // 2
+        p = stance_chance(b.data, me, kind)
         taken = (BP - p) * rule.fail_damage_bp + p * rule.chip_bp
         return -taken, p * rule.advantage_t
 

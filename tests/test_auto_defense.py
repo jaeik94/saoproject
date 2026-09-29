@@ -61,13 +61,13 @@ class AutoDefenseTest(unittest.TestCase):
         self.assertEqual((catch[0].actor, catch[0].value), ("ally0", b.rules.auto.evade_catch_t))
         # 딜레이 캐치: 굳은 플레이어에게 적의 약공격이 들어간다
         hits = [x for x in self.events(b, L.HIT) if x.actor == "enemy0"]
-        self.assertEqual(hits[0].ref, "snap")
+        self.assertEqual(hits[0].ref, "paw")
         self.assertFalse([x for x in self.events(b, L.AUTO_OK) if x.actor == "ally0"])
 
     def test_guarding_enemy_catches_with_its_weak_attack(self) -> None:
-        """가드하는 적(보어: 반응 8f, 들이받기 첫 타 14f)도 막아 낸 뒤 반드시 되받아친다."""
+        """가드하는 적(딱정벌레: 반응 6f, 깨물기 첫 타 10f)도 막아 낸 뒤 반드시 되받아친다."""
         data = parse_game_data(raw_data(10000))
-        b = Battle(data, (build_player(data, read_json(DATA_DIR / "loadout.json")),), data.enemies["frenzy_boar"], 1, 1, "full")
+        b = Battle(data, (build_player(data, read_json(DATA_DIR / "loadout.json")),), data.enemies["grass_beetle"], 1, 1, "full")
         p, e = b.allies[0], b.enemies[0]
         e.cell, e.facing = (0, 0), 3
         p.cell = add(e.cell, DIRS[3])
@@ -76,7 +76,7 @@ class AutoDefenseTest(unittest.TestCase):
         self.run_until(b, L.HIT)
         self.assertEqual([(x.actor, x.ref) for x in self.events(b, L.AUTO_OK)], [("enemy0", "guard")])
         hits = self.events(b, L.HIT)
-        self.assertEqual((hits[0].actor, hits[0].ref), ("enemy0", "gore"))
+        self.assertEqual((hits[0].actor, hits[0].ref), ("enemy0", "nip"))
         self.assertIn(":recovery", hits[0].info)
 
     def test_no_auto_from_behind(self) -> None:
@@ -116,7 +116,7 @@ class AutoDefenseTest(unittest.TestCase):
         b._begin_wait(tank, 10 ** 6)
         for a in b.allies[1:]:
             b._begin_wait(a, 10 ** 6)
-        b._begin_attack(e, e.enemy_def.attack_by_id("snap"), tank.index)
+        b._begin_attack(e, e.enemy_def.attack_by_id("paw"), tank.index)
         self.run_until(b, L.CATCH)
         self.assertEqual([(x.actor, x.ref) for x in self.events(b, L.AUTO_OK)], [("ally0", "guard")])
         self.assertEqual(self.events(b, L.CATCH)[0].value, b.rules.auto.guard_catch_t)
@@ -136,7 +136,7 @@ class AutoDefenseTest(unittest.TestCase):
         p, e = b.allies[0], b.enemies[0]
         p.cell = add(e.cell, DIRS[3])
         b._begin_stance(p, "evade", 0)                          # 회피 기본은 낮지만 약공격이면 거의 확정
-        b._begin_attack(e, e.enemy_def.attack_by_id("snap"), p.index)
+        b._begin_attack(e, e.enemy_def.attack_by_id("paw"), p.index)
         self.run_until(b, L.STANCE_OK)
         self.assertEqual([x.value for x in self.events(b, L.STANCE_OK)], [b.rules.auto.weak_manual_bp])
 

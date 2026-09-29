@@ -16,16 +16,15 @@ from dataclasses import dataclass, field
 from core import log as L
 from core.ai import EnemyBrain
 from core.combatant import (
-    ACTIVE, ATTACK, BROKEN, DEAD, HITSTUN, HOWL, ITEM, MOVE, NO_TARGET, PREMOTION, READY, RETARGET, STANCE,
-    STANCE_HOLD, SWAP, TURN, WAIT, WAKEABLE, ActionState, Combatant, OwnedWeapon, StanceState,
+    ACTIVE, ATTACK, BROKEN, DEAD, HITSTUN, HOWL, ITEM, KNOCKDOWN, MOVE, NO_TARGET, PREMOTION, READY, RETARGET,
+    STANCE, STANCE_HOLD, SWAP, TURN, WAIT, WAKEABLE, ActionState, Combatant, OwnedWeapon, StanceState,
 )
 from core.defs import STANCE_ORDER, AttackDef, EnemyDef, GameData, HitDef
 from core.formulas import (
-    BP, attack_timing, cells_distance, clash_power, damage, first_hit_offset, hitstun, in_range, move_cell_ticks,
-    raw_hit_power,
-    stance_chance, turn_ticks, unit_distance,
+    BP, attack_timing, cells_distance, clash_power, damage, first_hit_offset, getup_ticks, hit_offsets, hitstun,
+    in_range, move_cell_ticks, raw_hit_power, stance_chance, turn_ticks, unit_distance,
 )
-from core.hexgrid import DIRS, FRONT, Hex, add, direction_toward, disc, dist, neighbors, sector, shape_cells
+from core.hexgrid import BACK, BACK_SIDE, DIRS, FRONT, Hex, add, direction_toward, disc, dist, neighbors, sector, shape_cells
 from core.loadout import ItemStack, PlayerSpec
 from core.preview import ActionChoice, DecisionRequest, build_request
 from core.rng import Pcg32
@@ -96,8 +95,9 @@ class Battle:
             self.brains.append(EnemyBrain(enemy, self.rules))
         for e in self.enemies:
             t = self._nearest_ally(e)
-            e.target = t.index
             e.facing = direction_toward(e.cells(), t.cell)
+            e.provoked = not enemy.passive
+            e.target = t.index if e.provoked else NO_TARGET
             e.pattern = self.rng.below(len(enemy.patterns))
             self.brain(e).load(self._key(t), t.index, 0)
             self._schedule_decision(e, 0)
@@ -122,7 +122,7 @@ class Battle:
         c.sword_skills = spec.sword_skills
         c.slot_skills = spec.slot_skills
         c.quick_change = spec.quick_change
-        c.total_weight = spec.total_weight
+        c.carry_weight = spec.carry_weight
         return c
 
     def _make_enemy(self, index: int, k: int, e: EnemyDef) -> Combatant:
@@ -401,13 +401,14 @@ class Battle:
 
     def _begin_attack(self, c: Combatant, a: AttackDef, target: int) -> None:
         t = self.fighters[target]
-        startup, active, recovery = attack_timing(c, a)
+        startup, active, recovery = attack_timing(self.rules, c, a)
         s = self.now
         act = self._new_action(c, "attack", ATTACK, s + startup + active + recovery)
         act.attack, act.ref, act.target = a, a.id, target
         act.active_start, act.active_end = s + startup, s + startup + active
-        act.hit_ticks = [act.active_start + h.at_t for h in a.hits]
+        act.hit_ticks = [s + off for off in hit_offsets(self.rules, c, a)]
         act.consumed = [False] * len(a.hits)
+        act.parried = [False] * len(a.hits)
         origin = self._nearest_cell(c.cells(), t.cells())
         aim = self._nearest_cell(t.cells(), [origin])
         act.facing = direction_toward([origin], aim, c.facing)
@@ -453,6 +454,9 @@ class Battle:
                 for e in self.enemies:
                     if e.alive:
                         self.brain(e).observe(key, act.attack.id)
+                target = self.fighters[act.target]
+                if not target.is_ally and not target.provoked:
+                    self._provoke(target, c)
                 self._check_reaction(c, act)
         else:
             for a in self.allies:
@@ -465,6 +469,20 @@ class Battle:
             self._schedule_decision(a, self.now)
 
     # ------------------------------------------------------------ 적 행동
+    def _provoke(self, e: Combatant, by: Combatant) -> None:
+        """비선공 적이 공격받아 전투에 들어선다. 건드린 사람이 첫 대상."""
+        e.provoked = True
+        e.target = by.index
+        self.brain(e).load(self._key(by), by.index, self.now)
+        self._log(e, L.PROVOKE, by.cid)
+        if e.busy in (READY, WAIT):
+            e.free_token += 1
+            e.action, e.busy = None, READY
+            self._schedule_decision(e, self.now)
+
+    def _pack_leader(self, e: Combatant) -> Combatant:
+        return next(m for m in self.enemies if m.alive and m.enemy_def is e.enemy_def)
+
     def _key(self, ally: Combatant) -> str:
         return f"{ally.cid}:{ally.weapon_family}"
 
@@ -477,6 +495,10 @@ class Battle:
         alive = [a for a in self.allies if a.alive]
         if not alive:
             return NO_TARGET
+        if e.enemy_def is not None and e.enemy_def.pack:
+            leader = self._pack_leader(e)
+            if leader is not e and leader.target != NO_TARGET and self.fighters[leader.target].alive:
+                return leader.target
         br = self.brain(e)
         br.prune(self.now)
         front = self.front_ally(e)
@@ -506,6 +528,9 @@ class Battle:
             if weak is not None and victim.alive and victim.busy == ATTACK and in_range(weak, unit_distance(e, victim)):
                 self._begin_attack(e, weak, victim.index)   # 딜레이 캐치 (패턴은 진행하지 않음)
                 return
+        if not e.provoked:
+            self._begin_enemy_wait(e, ENEMY_IDLE_T_FRAMES * self.rules.ticks_per_frame)   # 비선공: 건드리기 전에는 가만히
+            return
         target = self._hate_target(e)
         if target == NO_TARGET:
             self._begin_enemy_wait(e, ENEMY_IDLE_T_FRAMES * self.rules.ticks_per_frame)
@@ -524,6 +549,8 @@ class Battle:
                 self._wake_allies_all()
                 return
             e.facing = want
+        if ed.pack and self._pack_flank(e, t):
+            return
         d = unit_distance(e, t)
         # 포위 대응
         if ed.surround_attack and e.cooldowns.get(ed.surround_attack, 0) <= self.now:
@@ -574,15 +601,18 @@ class Battle:
         self._wake_allies_all()
 
     def _enemy_step_toward(self, e: Combatant, t: Combatant) -> bool:
-        cur = unit_distance(e, t)
+        return self._enemy_step_to(e, t.cells())
+
+    def _enemy_step_to(self, e: Combatant, goal: list[Hex]) -> bool:
+        """goal 칸들에 한 칸 가까워지도록 이동. 가까워질 수 없으면 False."""
         best: Hex | None = None
-        best_d = cur
+        best_d = cells_distance(e.cells(), goal)
         for d in DIRS:
             anchor = add(e.cell, d)
             cells = [add(anchor, o) for o in e.footprint]
             if not all(c in self.arena and (self.occupant(c) in (None, e)) for c in cells):
                 continue
-            nd = cells_distance(cells, t.cells())
+            nd = cells_distance(cells, goal)
             if nd < best_d:
                 best, best_d = anchor, nd
         if best is None:
@@ -592,6 +622,25 @@ class Battle:
         act.ref = f"{best[0]},{best[1]}"
         self._started(e, act)
         return True
+
+    def _pack_flank(self, e: Combatant, t: Combatant) -> bool:
+        """무리: 다른 무리원이 대상의 정면을 잡고 있으면, 대상의 옆·뒤 칸(대상의 시선 기준)으로 돈다."""
+        if len(e.footprint) != 1:
+            return False
+        tf = self.facing_of(t)
+        mates = [m for m in self.enemies if m.alive and m is not e and m.enemy_def is e.enemy_def]
+        if not any(unit_distance(m, t) == 1 and sector([t.cell], tf, m.cell) == FRONT for m in mates):
+            return False
+        free = [n for n in neighbors(t.cell) if n in self.arena and self.occupant(n) in (None, e)]
+        if not free:
+            return False
+        best_sector = max(sector([t.cell], tf, n) for n in free)
+        if best_sector < BACK_SIDE:
+            return False
+        if unit_distance(e, t) == 1 and sector([t.cell], tf, e.cell) >= best_sector:
+            return False
+        goals = [n for n in free if sector([t.cell], tf, n) == best_sector and n != e.cell]
+        return bool(goals) and self._enemy_step_to(e, [min(goals, key=lambda n: (dist(n, e.cell), n[1], n[0]))])
 
     def _check_reaction(self, ally: Combatant, act: ActionState) -> None:
         """기억 중인 상대의 트리거 공격을 보면, 적이 자기 공격 도중이 아닐 때 반응 시간 뒤 태세로 대응한다."""
@@ -620,7 +669,7 @@ class Battle:
         assert e.enemy_def is not None
         bonus = self.brain(e).stance_bonus(self._key(ally), act.attack.id)
         best = max(e.enemy_def.stances,
-                   key=lambda s: (stance_chance(self.data, e, s, act.attack.attributes, bonus), -STANCE_ORDER.index(s)))
+                   key=lambda s: (stance_chance(self.data, e, s, bonus), -STANCE_ORDER.index(s)))
         self._log(e, L.REACT, best, 0, act.attack.id)
         self._begin_stance(e, best, act.hit_ticks[pending[-1]] + 1)
         return True
@@ -736,7 +785,7 @@ class Battle:
             main = self.fighters[act.target]
             if not main.alive:
                 return
-            if a.lunge and idx == 0 and self.hostile(atk, main) and len(atk.footprint) == 1:
+            if a.lunge and idx == 0 and self.hostile(atk, main):
                 self._lunge(atk, main)
             victims.append(main)
             area = self._area_cells(atk, act)
@@ -752,23 +801,31 @@ class Battle:
                 self._friendly_fire(atk, act, a.hits[idx], f)
 
     def _lunge(self, atk: Combatant, target: Combatant) -> None:
+        """돌진: 대상에 인접한 빈자리 중 가장 가까운 곳으로 파고든다 (여러 칸 적은 차지 칸 전체가 들어갈 자리)."""
         if unit_distance(atk, target) <= 1:
             return
-        free = [n for c in target.cells() for n in neighbors(c)
-                if n in self.arena and self.occupant(n) is None]
-        if free:
-            atk.cell = min(free, key=lambda n: (dist(n, atk.cell), n[1], n[0]))
+        anchors: list[Hex] = []
+        for c in target.cells():
+            for n in neighbors(c):
+                for o in atk.footprint:
+                    anchor = (n[0] - o[0], n[1] - o[1])
+                    cells = [add(anchor, x) for x in atk.footprint]
+                    if anchor not in anchors and all(x in self.arena and self.occupant(x) in (None, atk) for x in cells) \
+                            and cells_distance(cells, target.cells()) == 1:
+                        anchors.append(anchor)
+        if anchors:
+            atk.cell = min(anchors, key=lambda h: (dist(h, atk.cell), h[1], h[0]))
 
     def _hit_one(self, atk: Combatant, act: ActionState, idx: int, dfn: Combatant, main: bool) -> None:
         a = act.attack
         assert a is not None
         hit = a.hits[idx]
         if main and a.can_clash:
-            j = self._find_clash(atk, dfn)
+            j = self._find_clash(atk, act, dfn)
             if j >= 0:
                 self._clash(atk, act, idx, dfn, j)
                 return
-        if dfn.busy == BROKEN:
+        if dfn.busy in (BROKEN, KNOCKDOWN):
             self._land(atk, act, hit, dfn, BP, 0)
             return
         if dfn.stance is not None and dfn.busy in (STANCE, STANCE_HOLD) and self.now >= dfn.stance.active_from:
@@ -788,17 +845,13 @@ class Battle:
             self._log(dfn, L.AUTO_FAIL, kind, chance, a.id)
             return False
         self._log(dfn, L.AUTO_OK, kind, chance, a.id)
-        cost = hit.durability_damage * self.rules.stance(kind).durability_bp // BP
-        if cost > 0 and dfn.is_ally:
-            if kind == "guard" and dfn.shield is not None:
-                self._wear_shield(dfn, cost)
-            else:
-                self._wear_weapon(dfn, cost)
+        if kind == "guard":
+            self._guard_wear(dfn, a)
         self._catch(atk, act, dfn, kind)
         return True
 
     def _catch(self, atk: Combatant, act: ActionState, dfn: Combatant, kind: str) -> None:
-        """약공격이 막히면 공격측이 굳는다: 가드면 일반 공격이, 회피·패리면 선딜 짧은 소드 스킬이 들어갈 만큼."""
+        """일반 공격이 막히면 공격측이 굳는다: 가드면 일반 공격이, 회피면 선딜 짧은 소드 스킬이 들어갈 만큼."""
         if act.defended or atk.busy != ATTACK or atk.action is not act:
             return
         act.defended = True
@@ -806,10 +859,11 @@ class Battle:
         weak = dfn.enemy_def.weak_attack if dfn.enemy_def is not None else None
         if weak is not None:
             # 막은 적의 약공격이 반드시 들어가도록 (반응 시간 없이 바로 친다)
-            window = max(window, first_hit_offset(dfn, weak) + 1)
+            window = max(window, first_hit_offset(self.rules, dfn, weak) + 1)
         until = max(atk.free_at, self.now + window)
         act.end = until
         self._set_free(atk, until)
+        self._expose(atk)
         self._log(atk, L.CATCH, dfn.cid, window, kind)
         if dfn.is_ally:
             if dfn.busy in (WAIT, STANCE_HOLD):
@@ -822,40 +876,80 @@ class Battle:
                 dfn.action, dfn.stance, dfn.busy = None, None, READY
                 self._schedule_decision(dfn, self.now, immediate=True)
 
-    def _find_clash(self, atk: Combatant, dfn: Combatant) -> int:
+    def _find_clash(self, atk: Combatant, act: ActionState, dfn: Combatant) -> int:
+        """패리: 아군 소드 스킬의 타격과 적 공격의 타격이 서로를 노리며 창 안에서 만나면, 그 적 타격의 인덱스."""
         da = dfn.action
-        if dfn.busy != ATTACK or da is None or da.attack is None or not da.attack.can_clash or da.target != atk.index:
+        if atk.is_ally == dfn.is_ally or dfn.busy != ATTACK or da is None or da.attack is None or act.attack is None:
+            return -1
+        if da.target != atk.index or act.target != dfn.index:
+            return -1
+        ally_attack, enemy_attack = (act.attack, da.attack) if atk.is_ally else (da.attack, act.attack)
+        if ally_attack.kind != "sword_skill" or not enemy_attack.can_clash:
             return -1
         for j, t in enumerate(da.hit_ticks):
-            if not da.consumed[j] and self.now <= t <= self.now + self.rules.clash_window_t:
+            if not da.consumed[j] and self.now <= t <= self.now + self.rules.parry.window_t:
                 return j
         return -1
 
     def _clash(self, atk: Combatant, act: ActionState, idx: int, dfn: Combatant, j: int) -> None:
+        """패리 한 타: 확률 없이 피해 0. 적 기술의 모든 타를 막았으면 위력 비교로 승·무·패."""
         da = dfn.action
         assert da is not None and da.attack is not None and act.attack is not None
         da.consumed[j] = True
-        r = self.rules
-        pa = clash_power(r, atk, act.attack, act.attack.hits[idx])
-        pd = clash_power(r, dfn, da.attack, da.attack.hits[j])
-        info = f"{act.attack.id}={pa} vs {da.attack.id}={pd}"
-        if abs(pa - pd) <= max(pa, pd) * r.clash_draw_margin_bp // BP:
-            self._log(atk, L.CLASH, "draw", pa - pd, info)
-            self._apply_stun(atk, self.now + r.clash_draw_stun_t)
-            self._apply_stun(dfn, self.now + r.clash_draw_stun_t)
-        elif pa > pd:
-            self._log(atk, L.CLASH, "win", pa - pd, info)
-            self._clash_lose(dfn, atk)
+        if atk.is_ally:
+            ally, al_act, al_i, enemy, en_act, en_i = atk, act, idx, dfn, da, j
         else:
-            self._log(atk, L.CLASH, "lose", pa - pd, info)
-            self._clash_lose(atk, dfn)
-
-    def _clash_lose(self, loser: Combatant, winner: Combatant) -> None:
+            ally, al_act, al_i, enemy, en_act, en_i = dfn, da, j, atk, act, idx
+        assert al_act.attack is not None and en_act.attack is not None
         r = self.rules
-        weight = winner.weapon.weapon.weight if winner.weapon else 0
-        if self._add_break(loser, weight * r.weight_break):
+        en_act.parried[en_i] = True
+        en_act.parrier = ally.index
+        en_act.parry_power_self += clash_power(r, enemy, en_act.attack, en_act.attack.hits[en_i])
+        en_act.parry_power_other += clash_power(r, ally, al_act.attack, al_act.attack.hits[al_i])
+        done, total = sum(en_act.parried), len(en_act.parried)
+        self._log(ally, L.PARRY, en_act.attack.id, done, str(total))
+        self._wear_weapon(ally, r.durability.parry)
+        if done < total or en_act.parrier != ally.index:
+            return      # 부분 패리: 막은 타만 무효
+        pa, pe = en_act.parry_power_other, en_act.parry_power_self
+        info = f"{al_act.attack.id}={pa} vs {en_act.attack.id}={pe}"
+        if abs(pa - pe) <= max(pa, pe) * r.parry.draw_margin_bp // BP:
+            self._log(ally, L.CLASH, "draw", pa - pe, info)
+            self._apply_stun(ally, self.now + r.parry.draw_stun_t)
+            self._apply_stun(enemy, self.now + r.parry.draw_stun_t)
+        elif pa > pe:
+            self._log(ally, L.CLASH, "win", pa - pe, info)
+            w = ally.weapon.weapon.weight_stat if ally.weapon else 0
+            if not self._add_break(enemy, w * r.weight_break):
+                self._apply_stun(enemy, self.now + r.parry.lose_stun_t + w * r.weight_stun_ticks)
+        else:
+            self._log(ally, L.CLASH, "lose", pa - pe, info)
+            self._apply_stun(ally, self.now + r.parry.lose_stun_t)
+            self._knockback(ally, enemy, r.parry.knockback_cells)
+
+    def _knockback(self, c: Combatant, away_from: Combatant, cells: int) -> None:
+        """밀려남: away_from에게서 멀어지는 빈칸으로 한 칸씩."""
+        moved = 0
+        for _ in range(cells):
+            cur = cells_distance(c.cells(), away_from.cells())
+            options = [n for n in neighbors(c.cell) if n in self.arena and self.occupant(n) is None
+                       and cells_distance([n], away_from.cells()) > cur]
+            if not options:
+                break
+            c.cell = min(options, key=lambda n: (-cells_distance([n], away_from.cells()), n[1], n[0]))
+            moved += 1
+        if moved:
+            self._log(c, L.KNOCKBACK, away_from.cid, moved)
+
+    def _guard_wear(self, dfn: Combatant, a: AttackDef) -> None:
+        """가드: 방패가 있으면 방패가, 없으면 무기가 내구도를 떠안는다 (중량이면 더)."""
+        if not dfn.is_ally:
             return
-        self._apply_stun(loser, self.now + r.clash_lose_stun_t + weight * r.weight_stun_ticks)
+        cost = self.rules.durability.guard * (self.rules.heavy.durability_bp if a.heavy else BP) // BP
+        if dfn.shield is not None:
+            self._wear_shield(dfn, cost)
+        else:
+            self._wear_weapon(dfn, cost)
 
     def _stance_defend(self, atk: Combatant, act: ActionState, idx: int, dfn: Combatant) -> None:
         a = act.attack
@@ -870,7 +964,7 @@ class Battle:
                 chance = self.rules.auto.weak_manual_bp   # 약공격은 대응하면 거의 확정
             else:
                 bonus = self.brain(dfn).stance_bonus(self._key(atk), a.id) if not dfn.is_ally and atk.is_ally else 0
-                chance = stance_chance(self.data, dfn, kind, a.attributes, bonus)
+                chance = stance_chance(self.data, dfn, kind, bonus)
             ok = self.rng.roll_bp(chance)
             if ok and rule.roll_per_attack:
                 act.guard_locked.append(dfn.index)
@@ -880,32 +974,26 @@ class Battle:
             self._land(atk, act, hit, dfn, rule.fail_damage_bp, rule.fail_extra_stun_t)
             return
         self._log(dfn, L.STANCE_OK, kind, chance, a.id)
-        chip = raw_hit_power(atk, a, hit) * rule.chip_bp // BP
+        heavy = self.rules.heavy
+        chip_bp = rule.chip_bp * (heavy.chip_bp if a.heavy else BP) // BP
+        chip = raw_hit_power(atk, a, hit) * chip_bp // BP
         if chip > 0:
             self._deal(atk, dfn, chip, a.id, "chip")
             if not dfn.alive:
                 return
-        cost = hit.durability_damage * rule.durability_bp // BP
-        if cost > 0 and dfn.is_ally:
-            if kind == "guard" and dfn.shield is not None:
-                self._wear_shield(dfn, cost)
-            else:
-                self._wear_weapon(dfn, cost)
+        if kind == "guard":
+            self._guard_wear(dfn, a)
         if a.weak:
             self._catch(atk, act, dfn, kind)
             return
         stun = hit.hitstun_t * rule.defender_stun_bp // BP
+        if a.heavy and kind == "guard":
+            stun = stun * heavy.guard_stun_bp // BP
         if dfn.stance is not None and stun > 0:
             until = max(dfn.free_at, self.now + stun) if dfn.busy == STANCE else self.now + stun
             dfn.busy = STANCE
             self._set_free(dfn, until)
-        adv = rule.advantage_t
-        if rule.weight_bonus and dfn.weapon is not None and not act.defended:
-            w = dfn.weapon.weapon.weight
-            adv += w * self.rules.weight_stun_ticks
-            if self._add_break(atk, w * self.rules.weight_break):
-                return
-        self._defense_advantage(atk, act, adv)
+        self._defense_advantage(atk, act, rule.advantage_t)
 
     def _defense_advantage(self, atk: Combatant, act: ActionState, ticks: int) -> None:
         """방어 성공으로 공격측 후딜이 늘어난다. 공격당 1회."""
@@ -914,6 +1002,13 @@ class Battle:
         act.defended = True
         act.end += ticks
         self._set_free(atk, atk.free_at + ticks)
+        self._expose(atk)
+
+    def _expose(self, e: Combatant) -> None:
+        """공격이 막혀 굳은 적이 약점을 드러낸다 (적 고유 특징): 굳어 있는 동안 방향 보정·방어력 무시."""
+        if e.enemy_def is not None and e.enemy_def.exposed_on_defended:
+            e.exposed_until = e.free_at
+            self._log(e, L.EXPOSED, "", e.free_at - self.now)
 
     def _deal(self, atk: Combatant, dfn: Combatant, amount: int, ref: str, info: str) -> None:
         """피해 적용과 누적 피해 헤이트 기록. 체력이 0이 되면 쓰러진다."""
@@ -921,6 +1016,8 @@ class Battle:
         self._log(atk, L.HIT, ref, amount, f"{dfn.cid}:{info}")
         if atk.is_ally and not dfn.is_ally:
             self.brain(dfn).record(self.now, atk.index, amount)
+            if not dfn.provoked and dfn.hp > 0:
+                self._provoke(dfn, atk)
         if dfn.hp <= 0:
             dfn.hp = 0
             self._die(dfn)
@@ -928,13 +1025,20 @@ class Battle:
     def _land(self, atk: Combatant, act: ActionState, hit: HitDef, dfn: Combatant, dmg_bp: int, extra_stun_t: int) -> None:
         a = act.attack
         assert a is not None
+        du = self.rules.durability
         phase = dfn.attack_phase(self.now)
-        self._deal(atk, dfn, damage(atk, a, hit, dfn, dmg_bp), a.id, phase or dfn.busy)
-        if atk.is_ally and a.kind in ("sword_skill", "basic") and atk.weapon is not None:
-            self._wear_weapon(atk, self.rules.attack_hit_cost)
+        exposed = self.now < dfn.exposed_until
+        dmg_bp = dmg_bp * (max(BP, self._sector_bp(atk, dfn)) if exposed else self._sector_bp(atk, dfn)) // BP
+        before_armor = raw_hit_power(atk, a, hit) * dmg_bp // BP
+        state = (phase or dfn.busy) + ("+exposed" if exposed else "")
+        self._deal(atk, dfn, damage(atk, a, hit, dfn, dmg_bp, ignore_defense=exposed), a.id, state)
+        if atk.is_ally and atk.weapon is not None and a.kind in ("sword_skill", "basic"):
+            self._wear_weapon(atk, du.skill_hit if a.kind == "sword_skill" else du.basic_hit)
         if dfn.is_ally and dfn.armor is not None and dfn.alive:
-            self._wear_armor(dfn, self.rules.armor_hit_cost)
-        if not dfn.alive or dfn.busy == BROKEN:
+            reduced = min(dfn.defense, before_armor)
+            if reduced > 0:
+                self._wear_armor(dfn, reduced * du.armor_per_damage)
+        if not dfn.alive or dfn.busy in (BROKEN, KNOCKDOWN):
             return
         if self._add_break(dfn, hit.break_value):
             return
@@ -946,6 +1050,9 @@ class Battle:
                 self._log(atk, L.INTERRUPT, dfn.action.ref, 0, dfn.cid)
             elif phase == ACTIVE:
                 return  # 시스템 어시스트 중에는 끊기지 않는다
+        if a.knockdown_bp > 0 and self.rng.roll_bp(a.knockdown_bp):
+            self._knockdown(dfn, a)
+            return
         in_combo = dfn.busy == HITSTUN
         dfn.combo = dfn.combo + 1 if in_combo else 0
         until = self.now + hitstun(self.rules, dfn, hit.hitstun_t + extra_stun_t, dfn.combo)
@@ -964,9 +1071,26 @@ class Battle:
             f.hp = 0
             self._die(f)
             return
-        if f.busy == ATTACK and f.attack_phase(self.now) == ACTIVE:
+        if (f.busy == ATTACK and f.attack_phase(self.now) == ACTIVE) or f.busy in (KNOCKDOWN, BROKEN):
             return
         self._apply_stun(f, max(self.now + self.rules.ff_stun_t, f.free_at if f.busy == HITSTUN else 0))
+
+    def _sector_bp(self, atk: Combatant, dfn: Combatant) -> int:
+        """적의 방향별 받는 피해 배율 (고유 특징). 넘어진 적은 방향이 풀려 후면으로 본다."""
+        if dfn.enemy_def is None:
+            return BP
+        if dfn.busy == KNOCKDOWN:
+            return dfn.enemy_def.sector_damage_bp[BACK]
+        s = sector(dfn.cells(), dfn.facing, self._nearest_cell(atk.cells(), dfn.cells()))
+        return dfn.enemy_def.sector_damage_bp[s]
+
+    def _knockdown(self, c: Combatant, a: AttackDef) -> None:
+        """넘어짐: 기상할 때까지 행동·가드·자동 대응 불가."""
+        c.action, c.stance, c.combo = None, None, 0
+        c.busy = KNOCKDOWN
+        t = getup_ticks(self.rules, c)
+        self._log(c, L.KNOCKDOWN, a.id, t)
+        self._set_free(c, self.now + t)
 
     def _apply_stun(self, c: Combatant, until: int) -> None:
         c.action, c.stance = None, None
@@ -1005,7 +1129,7 @@ class Battle:
 
     # ------------------------------------------------------------ 내구도
     def _warn(self, c: Combatant, name: str, before: int, after: int, maximum: int) -> None:
-        for thr in self.rules.warn_bp:
+        for thr in self.rules.durability.warn_bp:
             if before * BP > thr * maximum >= after * BP:
                 self._log(c, L.DURABILITY_WARN, name, after, f"{thr}")
 

@@ -9,11 +9,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from core.combatant import (
-    ATTACK, BROKEN, HITSTUN, HOWL, ITEM, MOVE, NO_TARGET, PREMOTION, RETARGET, STANCE, STANCE_HOLD, SWAP, TURN, WAIT,
+    ATTACK, BROKEN, HITSTUN, HOWL, ITEM, KNOCKDOWN, MOVE, NO_TARGET, PREMOTION, RETARGET, STANCE, STANCE_HOLD, SWAP, TURN, WAIT,
     Combatant,
 )
 from core.defs import STANCE_ORDER, AttackDef, StanceRule
-from core.formulas import attack_timing, in_range, move_cell_ticks, stance_chance, stance_chance_range, unit_distance
+from core.formulas import attack_timing, hit_offsets, in_range, move_cell_ticks, stance_chance, unit_distance
 
 if TYPE_CHECKING:
     from core.battle import Battle
@@ -69,7 +69,9 @@ class ThreatView:
     approx_hit_in_t: int             # 다음 타격까지 (반올림한 근사값, 항상 보임)
     known: bool
     name: str = ""
-    attributes: tuple[str, ...] = ()
+    heavy: bool = False              # 태그 (known일 때만): 중량
+    style: str = ""                  # 소드 스킬 유형: single | combo | rush
+    physical: str = ""               # 물리 속성
     hits_left: int = 0
     hit_in_t: int = -1               # 정확한 값 (known일 때만)
     enemy_free_in_t: int = -1        # 적 후딜 종료까지 (known일 때만)
@@ -83,7 +85,9 @@ class OptionView:
     free_in_t: int                       # 방해받지 않으면 내 다음 차례까지
     first_hit_in_t: int = -1
     before_enemy_hit: bool | None = None  # 내 첫 타격이 대상 적의 프리모션 안에 들어감 (판정 시작 전 = 끊기 후보)
-    clash_timing: bool | None = None      # 상쇄 창 안에 맞음
+    clash_timing: bool | None = None      # 패리로 적 기술의 모든 타를 막을 수 있음
+    parry_hits: int = -1                  # 패리로 막을 수 있는 적 타 수 / 남은 적 타 수 (정보 있음일 때만)
+    parry_total: int = -1
     punish: bool | None = None            # 대상 적이 자유로워지기 전에 명중
     chance_lo: int = -1                   # 태세 성공률 (정보가 있으면 lo == hi)
     chance_hi: int = -1
@@ -112,7 +116,7 @@ def _round(t: int, step: int) -> int:
 
 def enemy_free_in(b: Battle, e: Combatant) -> int:
     """보이는 경우에만 적이 자유로워지기까지의 틱, 아니면 -1."""
-    if e.busy in (HITSTUN, BROKEN, RETARGET, TURN) or (e.busy in (ATTACK, WAIT) and b.knowledge == "full"):
+    if e.busy in (HITSTUN, BROKEN, KNOCKDOWN, RETARGET, TURN) or (e.busy in (ATTACK, WAIT) and b.knowledge == "full"):
         return e.free_at - b.now
     return -1
 
@@ -132,7 +136,7 @@ def _threat(b: Battle, e: Combatant, me: Combatant) -> ThreatView | None:
     approx = _round(hit_in, b.rules.approx_round_t)
     cells = tuple(act.place_cells)
     if b.knowledge == "full":
-        return ThreatView(e.index, a.targeting, cells, approx, True, a.name, a.attributes, len(pending), hit_in,
+        return ThreatView(e.index, a.targeting, cells, approx, True, a.name, a.heavy, a.style, a.physical, len(pending), hit_in,
                           e.free_at - b.now, a.weak)
     return ThreatView(e.index, a.targeting, cells, approx, False)
 
@@ -167,7 +171,7 @@ def _current_line(b: Battle, c: Combatant, exact: bool) -> Timeline:
                 return Timeline((Segment(phase, 0, approx, False), Segment("recovery", approx, UNKNOWN_END, False)), (approx,), False)
             return Timeline((Segment(phase, 0, UNKNOWN_END, False),), (approx,), False)
         return Timeline((Segment(phase, 0, UNKNOWN_END, False),))
-    if c.busy in (HITSTUN, BROKEN):
+    if c.busy in (HITSTUN, BROKEN, KNOCKDOWN):
         return _simple_line(c.busy, c.free_at - now)
     if c.busy == RETARGET and act is not None:
         turn_left = max(0, act.turn_done - now)
@@ -207,7 +211,7 @@ def _enemy_line(b: Battle, e: Combatant) -> Timeline:
             t += s.wait_t
         else:
             a = ed.attack_by_id(s.attack_id)
-            su, ac, rc = attack_timing(e, a)
+            su, ac, rc = attack_timing(b.rules, e, a)
             segs.extend(_attack_segments(t, su, ac, rc, a.name, True))
             t += su + ac + rc
     return Timeline(tuple(segs), cur.hits_t, cur.hits_exact, cur.free_t)
@@ -229,17 +233,20 @@ def rows(b: Battle) -> tuple[RowView, ...]:
 # ------------------------------------------------------------ 선택지
 
 def _attack_option(b: Battle, me: Combatant, a: AttackDef, kind: str, e: Combatant, label: str) -> OptionView:
-    startup, active, recovery = attack_timing(me, a)
-    first = startup + a.hits[0].at_t
+    startup, active, recovery = attack_timing(b.rules, me, a)
+    offsets = hit_offsets(b.rules, me, a)
+    first = offsets[0]
     before = clash = None
+    parry_hits = parry_total = -1
     if b.knowledge == "full":
         pending = e.pending_hits(b.now)
         if pending and e.action is not None and e.action.attack is not None:
-            e_hit = e.action.hit_ticks[pending[0]] - b.now
             if b.now < e.action.active_start:
                 before = a.interrupts and first < e.action.active_start - b.now
-            clash = (a.can_clash and e.action.attack.can_clash and e.action.target == me.index
-                     and abs(first - e_hit) <= b.rules.clash_window_t)
+            if a.kind == "sword_skill" and e.action.attack.can_clash and e.action.target == me.index:
+                parry_hits, parry_total = _parry_match(offsets, [e.action.hit_ticks[i] - b.now for i in pending],
+                                                       b.rules.parry.window_t)
+                clash = parry_hits == parry_total
     free_in = enemy_free_in(b, e)
     punish = first < free_in if free_in >= 0 else None
     risk = -1
@@ -247,10 +254,23 @@ def _attack_option(b: Battle, me: Combatant, a: AttackDef, kind: str, e: Combata
         risk = b.auto_chance(e, me, a.id) if b.knowledge == "full" else -2
     cd = f"쿨링 {a.cooldown_t // b.rules.ticks_per_frame}f" if a.cooldown_t else ""
     total = startup + active + recovery
-    line = Timeline(tuple(_attack_segments(0, startup, active, recovery, a.name, False)),
-                    tuple(startup + h.at_t for h in a.hits), True, total)
-    return OptionView(ActionChoice(kind, a.id, e.index), label, total, first, before, clash, punish, auto_risk_bp=risk,
+    line = Timeline(tuple(_attack_segments(0, startup, active, recovery, a.name, False)), tuple(offsets), True, total)
+    return OptionView(ActionChoice(kind, a.id, e.index), label, total, first, before, clash, parry_hits, parry_total, punish,
+                      auto_risk_bp=risk,
                       note=cd, line=line)
+
+
+def _parry_match(mine: list[int], theirs: list[int], window: int) -> tuple[int, int]:
+    """내 타격 시점과 적의 남은 타격 시점을 창 안에서 하나씩 짝지어, (막을 수 있는 적 타 수, 적 타 수)."""
+    used = [False] * len(mine)
+    matched = 0
+    for t in theirs:
+        for i, m in enumerate(mine):
+            if not used[i] and abs(m - t) <= window:
+                used[i] = True
+                matched += 1
+                break
+    return matched, len(theirs)
 
 
 def _stance_line(rule: StanceRule) -> Timeline:
@@ -281,11 +301,7 @@ def build_request(b: Battle, actor: int) -> DecisionRequest:
         if in_range(throw, d):
             opts.append(_attack_option(b, me, throw, "throw", e, throw.name + suffix))
 
-    # 태세
-    attr_sets: list[tuple[str, ...]] = []
-    for e in enemies:
-        if e.enemy_def is not None:
-            attr_sets.extend(a.attributes for a in e.enemy_def.attacks)
+    # 태세 (공격 태그와의 상성 규칙은 미정이라 반영하지 않는다)
     for kind in STANCE_ORDER:
         rule = r.stance(kind)
         if rule.requires_weapon and me.weapon is None and not (kind == "guard" and me.shield is not None):
@@ -295,9 +311,10 @@ def build_request(b: Battle, actor: int) -> DecisionRequest:
         if threat is not None and threat.known and threat.weak:
             lo = hi = r.auto.weak_manual_bp
         elif threat is not None and threat.known:
-            lo = hi = stance_chance(b.data, me, kind, threat.attributes)
+            lo = hi = stance_chance(b.data, me, kind)
         else:
-            lo, hi = stance_chance_range(b.data, me, kind, attr_sets or [()])
+            lo = stance_chance(b.data, me, kind)          # 정보가 없으면 일반 공격일 가능성까지 범위로
+            hi = max(lo, r.auto.weak_manual_bp)
         in_time = rule.startup_t <= threat.hit_in_t if threat is not None and threat.known else None
         opts.append(OptionView(ActionChoice("stance", kind), rule.name, rule.startup_t + rule.min_hold_t,
                                chance_lo=lo, chance_hi=hi, stance_in_time=in_time, line=_stance_line(rule)))

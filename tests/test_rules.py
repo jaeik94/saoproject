@@ -15,6 +15,24 @@ def raw_data() -> dict:
     return {name: read_json(DATA_DIR / f"{name}.json") for name in DATA_FILES}
 
 
+# 1구획 몬스터는 기술 3종뿐이라, 엔진 규칙(장소 지정·포위 대응·3연격)을 시험할 때만 쓰는 공격
+TEST_SWEEP = {"id": "sweep", "name": "시험용 휩쓸기", "physical": "blunt", "range": [1, 2], "startup": 30, "active": 6,
+              "recovery": 24, "cooldown": 0, "targeting": "place", "area": "disc1", "can_clash": False, "interrupts": True,
+              "hits": [{"at": 2, "power_bp": 26000, "hitstun": 30}]}
+TEST_SPIN = {"id": "spin", "name": "시험용 몸부림", "physical": "slash", "range": [1, 1], "startup": 16, "active": 6,
+             "recovery": 26, "cooldown": 240, "area": "ring1", "can_clash": False, "interrupts": True,
+             "hits": [{"at": 2, "power_bp": 26000, "hitstun": 24}]}
+TEST_FLURRY = {"id": "flurry", "name": "시험용 3연격", "physical": "slash", "range": [1, 1], "startup": 16, "active": 20,
+               "recovery": 22, "cooldown": 0, "can_clash": True, "interrupts": True,
+               "hits": [{"at": 0, "power_bp": 10000, "hitstun": 10}, {"at": 7, "power_bp": 8600, "hitstun": 10},
+                        {"at": 14, "power_bp": 10000, "hitstun": 16}]}
+
+
+def with_wolf_attacks(raw: dict, *attacks: dict) -> dict:
+    raw["enemies"]["dire_wolf"]["attacks"].extend(dict(a) for a in attacks)
+    return raw
+
+
 def raw_loadout() -> dict:
     return read_json(DATA_DIR / "loadout.json")
 
@@ -47,13 +65,13 @@ class DataTest(unittest.TestCase):
         with self.assertRaisesRegex(DataError, "최대 1개"):
             parse_game_data(raw)
 
-    def test_parry_only_for_high_grade(self) -> None:
+    def test_enemies_never_parry(self) -> None:
         raw = raw_data()
         w = raw["enemies"]["dire_wolf"]
-        w["sword_skill_user"], w["stances"] = True, ["guard", "parry"]
+        w["sword_skill_user"], w["high_grade"], w["stances"] = True, True, ["guard", "parry"]
         with self.assertRaisesRegex(DataError, "패리"):
             parse_game_data(raw)
-        w["high_grade"], w["stances"] = True, ["guard", "parry", "evade"]
+        w["stances"] = ["guard", "evade"]
         parse_game_data(raw)
 
     def test_pattern_must_use_known_attack(self) -> None:
@@ -117,10 +135,11 @@ class CombatTest(unittest.TestCase):
                 return
             b.submit(next(o.choice for o in req.options if o.choice.kind == "wait"))
 
-    def test_stance_chance_uses_attributes(self) -> None:
+    def test_stance_chance_uses_stats(self) -> None:
         b = self.make(solo=True)
-        # 가드 기본 7500 + 무기 방어 800, 중량 -2000
-        self.assertEqual(stance_chance(b.data, b.allies[0], "guard", ("heavy",)), 6300)
+        # 가드: 기본 6500 + 근력 5 × 150 + 무기 방어 800 / 회피: 기본 3500 + 민첩 5 × 100 (상성은 미정이라 없음)
+        self.assertEqual(stance_chance(b.data, b.allies[0], "guard"), 8050)
+        self.assertEqual(stance_chance(b.data, b.allies[0], "evade"), 4000)
 
     def test_decision_order_by_agi(self) -> None:
         b = self.make()
@@ -131,10 +150,10 @@ class CombatTest(unittest.TestCase):
         b = self.make(solo=True)
         self.place(b, allies=[(-1, 0)])
         p, e = b.allies[0], b.enemies[0]
-        b._begin_attack(e, e.enemy_def.attack_by_id("tackle"), p.index)   # 첫 타 27f
+        b._begin_attack(e, e.enemy_def.attack_by_id("lunge"), p.index)    # 발생 20f (첫 타 21f)
         b._begin_attack(p, b.data.actions["slant"], e.index)             # 첫 타 16f
         b.advance()
-        self.assertEqual([x.ref for x in self.events(b, L.INTERRUPT)], ["tackle"])
+        self.assertEqual([x.ref for x in self.events(b, L.INTERRUPT)], ["lunge"])
         self.assertEqual([x.actor for x in self.events(b, L.HIT)], ["ally0"])
 
     def test_basic_attack_does_not_interrupt(self) -> None:
@@ -161,7 +180,7 @@ class CombatTest(unittest.TestCase):
         self.assertFalse(self.events(b, L.HIT))
 
     def test_place_attack_misses_after_moving_out(self) -> None:
-        b = self.make(solo=True)
+        b = self.make(with_wolf_attacks(raw_data(), TEST_SWEEP), solo=True)
         self.place(b, allies=[(-1, 0)])
         p, e = b.allies[0], b.enemies[0]
         b._begin_attack(e, e.enemy_def.attack_by_id("sweep"), p.index)   # 대상 칸 + 주위 1칸, 첫 타 32f
@@ -278,7 +297,9 @@ class CombatTest(unittest.TestCase):
         self.assertEqual(dealer.hp, 10 + b.rules.rest_regen * 5)
 
     def test_surround_attack(self) -> None:
-        b = self.make()
+        raw = with_wolf_attacks(raw_data(), TEST_SPIN)
+        raw["enemies"]["dire_wolf"]["surround_attack"], raw["enemies"]["dire_wolf"]["surround_count"] = "spin", 3
+        b = self.make(raw)
         self.place(b, allies=[add((0, 0), DIRS[3]), add((0, 0), DIRS[2]), add((0, 0), DIRS[4])])
         e = b.enemies[0]
         e.target, e.busy = b.allies[0].index, READY
@@ -287,21 +308,22 @@ class CombatTest(unittest.TestCase):
         self.assertEqual(e.action.ref, e.enemy_def.surround_attack)
 
     def test_large_footprint_blocks_movement(self) -> None:
-        b = self.make(enemy="test_medium7")
+        b = self.make(enemy="frenzy_boar")
         e = b.enemies[0]
-        self.assertEqual(len(e.cells()), 7)
+        self.assertEqual(len(e.cells()), 3)
         for a in b.allies:
             reach = {c for c, _ in b.reachable(a)}
             self.assertFalse(reach & set(e.cells()))
 
-    def test_break_then_rise_attack(self) -> None:
-        b = self.make(enemy="test_medium3")
+    def test_break_then_rise_resets_aggro(self) -> None:
+        b = self.make(enemy="frenzy_boar")
         e = b.enemies[0]
         self.assertTrue(b._add_break(e, e.enemy_def.break_max))
         self.assertEqual(e.busy, BROKEN)
+        b.brain(e).record(b.now, 1, 50)
         b._rise(e)
         self.assertEqual(self.events(b, L.RISE)[0].info, "aggro_reset")
-        self.assertEqual(e.action.ref, "roar")
+        self.assertEqual(b.brain(e).records, [])
 
     def test_weapon_swap_triggers_reload(self) -> None:
         lo = raw_loadout()

@@ -1,8 +1,8 @@
 {
-  "_note": "방어구·방패 정의. 수치는 임시값. slot: body|shield, requires: 착용에 필요한 슬롯 스킬(없으면 null), guard_bonus_bp: 가드 성공률 보너스(방패). 방패를 들면 하울(방패 모드)을 쓸 수 있다.",
+  "_note": "방어구·방패 정의. 수치는 임시값. slot: body|shield, requires: 착용에 필요한 슬롯 스킬(없으면 null), wear_weight: 착용 무게(0.1 단위, 가죽 상의 1 · 경금속 상의 4 · 방패 4), durability: 최대 내구도(× 10, 방어구 기본값은 미결), guard_bonus_bp: 가드 성공률 보너스(방패). 방패를 들면 하울(방패 모드)을 쓸 수 있다.",
 
-  "cloth_shirt":   { "name": "천 셔츠",    "slot": "body",   "defense": 0, "weight": 2, "durability": 40, "requires": null },
-  "leather_coat":  { "name": "가죽 코트",  "slot": "body",   "defense": 1, "weight": 5, "durability": 80, "requires": null },
-  "bronze_plate":  { "name": "청동 흉갑",  "slot": "body",   "defense": 1, "weight": 12, "durability": 120, "requires": "light_metal_equip" },
-  "small_buckler": { "name": "스몰 버클러", "slot": "shield", "defense": 0, "weight": 6, "durability": 70, "requires": "shield_equip", "guard_bonus_bp": 1000 }
+  "cloth_shirt":   { "name": "천 셔츠",     "slot": "body",   "defense": 0, "wear_weight": 0,  "durability": 400,  "requires": null },
+  "leather_coat":  { "name": "가죽 코트",   "slot": "body",   "defense": 1, "wear_weight": 10, "durability": 800,  "requires": null },
+  "bronze_plate":  { "name": "청동 흉갑",   "slot": "body",   "defense": 1, "wear_weight": 40, "durability": 1200, "requires": "light_metal_equip" },
+  "small_buckler": { "name": "스몰 버클러", "slot": "shield", "defense": 0, "wear_weight": 40, "durability": 6300, "requires": "shield_equip", "guard_bonus_bp": 1000 }
 }

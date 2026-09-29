@@ -3,6 +3,8 @@
     python -m app.tiers --n 100
 
 1:1은 loadout.json(솔로), 3:1은 party.json. 봇: 완벽 대처(정보 있음), 단순(정보 없음), 평타(정보 없음).
+피해는 "대응 실패 피해"(맞음, 태세 실패, 프렌들리 파이어)와 "가드 칩"(막았는데 스며든 피해)으로 나눈다.
+기준의 "피해 없음"은 대응 실패 피해가 없다는 뜻이다 (가드 칩은 완벽 대처의 범주).
 """
 from __future__ import annotations
 
@@ -55,17 +57,25 @@ def main() -> None:
                 max_hp = sum(s.max_hp for s in specs)
                 for bot, knowledge, bot_label in BOT_RUNS:
                     wins = deaths = 0
-                    hp_left = 0
+                    chip = fail = 0
                     secs = 0.0
                     for i in range(args.n):
-                        res, _ = run_one(data, specs, enemy.id, 1, args.seed + i, bot, knowledge)
+                        res, log = run_one(data, specs, enemy.id, 1, args.seed + i, bot, knowledge)
                         wins += res.winner == "party"
                         deaths += sum(1 for h in res.ally_hp if h <= 0)
-                        hp_left += sum(res.ally_hp)
                         secs += res.end_tick / data.rules.ticks_per_sec
+                        for e in log:
+                            if e.event == "hit" and e.info.startswith("ally"):
+                                if e.info.endswith(":chip"):
+                                    chip += e.value
+                                else:
+                                    fail += e.value
+                            elif e.event == "friendly_fire":
+                                fail += e.value
                     n = args.n
-                    lost = 1 - hp_left / (max_hp * n)
-                    print(f"    {bot_label:<6} 승률 {wins / n:6.1%}  잃은 체력 {lost:6.1%}  판당 사망 {deaths / n:4.2f}명  평균 {secs / n:5.1f}초")
+                    total = max_hp * n
+                    print(f"    {bot_label:<6} 승률 {wins / n:6.1%}  대응 실패 피해 {fail / total:6.1%}  가드 칩 {chip / total:5.1%}"
+                          f"  판당 사망 {deaths / n:4.2f}명  평균 {secs / n:5.1f}초")
 
 
 if __name__ == "__main__":

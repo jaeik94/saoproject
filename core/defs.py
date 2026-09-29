@@ -1,6 +1,7 @@
 """정의 데이터(불변). 경계 레이어가 읽어 온 dict를 받아 타입이 고정된 정의로 바꾼다.
 
 데이터 파일의 시간은 프레임이고, 여기서 틱(정수)으로 바꿔 저장한다. 필드 이름의 `_t`는 틱 단위라는 뜻.
+무게(착용·소지)는 0.1 단위 정수, 내구도는 기획서 수치의 10배 정수로 다룬다.
 """
 from __future__ import annotations
 
@@ -9,12 +10,14 @@ from typing import Any
 
 from core.hexgrid import Hex, dist
 
-STANCE_ORDER: tuple[str, ...] = ("guard", "parry", "evade")
+STANCE_ORDER: tuple[str, ...] = ("guard", "evade")        # 패리는 태세가 아니다 (소드 스킬 판정 맞추기 = 상쇄)
 ATTACK_KINDS: tuple[str, ...] = ("sword_skill", "basic", "throw", "beast")
 TARGETINGS: tuple[str, ...] = ("person", "place")
 AREAS: tuple[str, ...] = ("single", "arc3", "ring1", "line2", "disc1")
 SIZES: tuple[str, ...] = ("small", "medium", "large")
+PHYSICALS: tuple[str, ...] = ("", "slash", "thrust", "blunt", "pierce")   # 참격, 찌르기, 타격, 관통 (상성 규칙은 미정)
 HOWL_MODES: tuple[str, ...] = ("boost", "cut")
+SECTORS = 4                                                # 정면, 앞쪽 측면, 뒤쪽 측면, 후면
 
 
 class DataError(Exception):
@@ -62,6 +65,12 @@ class _Reader:
             raise DataError(f"{self.where}.{key}: 문자열이어야 합니다 (값: {v!r})")
         return v
 
+    def physical(self, key: str, default: str = "") -> str:
+        v = self.str(key, default)
+        if v not in PHYSICALS:
+            raise DataError(f"{self.where}.{key}: {PHYSICALS[1:]} 중 하나여야 합니다")
+        return v
+
     def hexes(self, key: str) -> tuple[Hex, ...]:
         v = self.get(key)
         try:
@@ -84,7 +93,6 @@ class HitDef:
     power_bp: int
     hitstun_t: int
     break_value: int
-    durability_damage: int
 
 
 @dataclass(slots=True, frozen=True)
@@ -102,13 +110,20 @@ class AttackDef:
     active_t: int
     recovery_t: int
     cooldown_t: int
-    attributes: tuple[str, ...]
-    lunge: bool
-    can_clash: bool
+    lunge: bool               # 돌진: 판정 시 대상 옆 칸으로 파고든다
+    can_clash: bool           # 패리(상쇄)에 쓰이거나 패리될 수 있다
     interrupts: bool
     fixed_power: int
     hits: tuple[HitDef, ...]
-    weak: bool                # 약공격(일반 공격): 자동 대응 대상, 수동 대응은 거의 확정, 막히면 딜레이 캐치
+    weak: bool                # 일반 공격: 자동 대응 대상, 수동 대응은 거의 확정, 막히면 딜레이 캐치
+    physical: str             # 물리 속성 태그 (아군 무기 기술은 무기를 따른다)
+    heavy: bool               # 중량 태그: 가드 칩 피해·가드 경직·내구도 소모·패리 위력이 커진다
+    knockdown_bp: int         # 부가 효과 넘어짐 확률 (가드로 막으면 걸리지 않는다)
+
+    @property
+    def style(self) -> str:
+        """소드 스킬 유형 태그: 돌진 / 연격 / 단타."""
+        return "rush" if self.lunge else "combo" if len(self.hits) > 1 else "single"
 
 
 @dataclass(slots=True, frozen=True)
@@ -116,10 +131,13 @@ class WeaponDef:
     id: str
     name: str
     family: str
+    physical: str
     attack: int
     speed_bp: int
-    weight: int
-    durability: int
+    weight_stat: int          # 무게 스탯(강화 항목): 패리 승리 시 상대 경직·무력화 증가
+    wear_weight: int          # 착용 무게 (0.1 단위)
+    min_str: int              # 최소 근력 (모자라면 장비할 수 없다)
+    durability: int           # 최대 내구도 (기획서 수치 × 10)
 
 
 @dataclass(slots=True, frozen=True)
@@ -128,7 +146,7 @@ class ArmorDef:
     name: str
     slot: str
     defense: int
-    weight: int
+    wear_weight: int          # 착용 무게 (0.1 단위)
     durability: int
     requires: str
     guard_bonus_bp: int
@@ -141,7 +159,7 @@ class ItemDef:
     kind: str                 # regen_boost: 휴식 회복 속도를 일정 시간 높임
     boost_bp: int
     duration_t: int
-    weight: int
+    weight: int               # 소지 무게
 
 
 @dataclass(slots=True, frozen=True)
@@ -166,29 +184,59 @@ class StanceRule:
     startup_t: int
     min_hold_t: int
     base_bp: int
-    agi_bonus_bp: int
+    str_bonus_bp: int         # 근력 1당 (가드)
+    agi_bonus_bp: int         # 민첩 1당 (회피)
     requires_weapon: bool
     roll_per_attack: bool
     chip_bp: int
-    durability_bp: int
     defender_stun_bp: int
     advantage_t: int
-    weight_bonus: bool
     fail_damage_bp: int
     fail_extra_stun_t: int
 
 
 @dataclass(slots=True, frozen=True)
-class AttributeRule:
-    id: str
-    name: str
-    mods: tuple[tuple[str, int], ...]
+class ParryRule:
+    """패리(상쇄): 내 소드 스킬의 판정을 적의 판정에 맞춘다. 맞으면 피해 0, 적의 모든 타를 막았을 때 위력 비교."""
+    window_t: int
+    draw_margin_bp: int
+    str_bonus_bp: int
+    draw_stun_t: int
+    lose_stun_t: int
+    knockback_cells: int      # 진 아군이 밀려나는 칸 수
 
-    def mod_for(self, stance: str) -> int:
-        for k, v in self.mods:
-            if k == stance:
-                return v
-        return 0
+
+@dataclass(slots=True, frozen=True)
+class HeavyRule:
+    chip_bp: int              # 가드 칩 피해 배율
+    guard_stun_bp: int        # 가드한 쪽의 경직 배율
+    durability_bp: int        # 막은 쪽 장비 내구도 소모 배율
+    parry_power_bp: int       # 패리 위력 비교 배율
+
+
+@dataclass(slots=True, frozen=True)
+class KnockdownRule:
+    getup_t: int              # 아군 기상 시간 (착용 무게로 늘어남). 적은 적 데이터의 기상 시간
+    wear_bp: int              # 착용 무게 0.1당 기상 시간 증가율
+
+
+@dataclass(slots=True, frozen=True)
+class WearRule:
+    """착용 무게: 무기·방패·방어구 무게 합 vs 근력으로 정해지는 한도. 넘으면 이동과 공격 프레임에 배수."""
+    base_limit: int           # 0.1 단위
+    per_str: int              # 근력 1당 한도 (0.1 단위)
+    linear: int               # 배수 = 1 + linear·r + quad·r²  (r = 초과 비율)
+    quad: int
+
+
+@dataclass(slots=True, frozen=True)
+class DurabilityRule:
+    skill_hit: int            # 소드 스킬 1타 (무기)
+    basic_hit: int            # 일반 공격 (무기)
+    parry: int                # 패리 (무기)
+    guard: int                # 가드 (방패가 있으면 방패, 없으면 무기)
+    armor_per_damage: int     # 방어구: 방어력으로 줄인 피해 1당
+    warn_bp: tuple[int, ...]
 
 
 @dataclass(slots=True, frozen=True)
@@ -215,12 +263,12 @@ class AiRule:
 
 @dataclass(slots=True, frozen=True)
 class AutoRule:
-    """약공격에 대한 자동 대응과 딜레이 캐치."""
+    """일반 공격에 대한 자동 대응과 딜레이 캐치."""
     base_bp: int              # 아군 자동 대응 기본 확률
     stat_bp: int              # 아군: 해당 스탯(가드=근력, 회피=민첩) 1당 추가
-    weak_manual_bp: int       # 약공격에 수동 태세로 대응했을 때 성공률
-    guard_catch_t: int        # 약공격을 가드당한 쪽이 굳는 시간 (막은 쪽의 일반 공격이 들어감)
-    evade_catch_t: int        # 약공격을 회피(패리)당한 쪽이 굳는 시간 (선딜 짧은 소드 스킬이 들어감)
+    weak_manual_bp: int       # 일반 공격에 수동 태세로 대응했을 때 성공률
+    guard_catch_t: int        # 일반 공격을 가드당한 쪽이 굳는 시간 (막은 쪽의 일반 공격이 들어감)
+    evade_catch_t: int        # 일반 공격을 회피당한 쪽이 굳는 시간 (선딜 짧은 소드 스킬이 들어감)
     ally_vision: int          # 아군(인간형) 자동 대응 방향 구역: 0 정면, 1 앞쪽 측면, 2 뒤쪽 측면, 3 후면까지
 
 
@@ -259,7 +307,12 @@ class EnemyDef:
     stance_bonus_bp: int
     vision: int               # 자동 대응 방향 구역 (0 정면 ~ 3 후면까지)
     auto_defense_bp: int      # 자동 대응 기본 확률 (적응 보너스가 더해짐)
-    clash_bonus_bp: int
+    sector_damage_bp: tuple[int, ...]   # 받는 피해 배율: 정면, 앞쪽 측면, 뒤쪽 측면, 후면 (고유 특징: 단단한 정면, 약점 등)
+    clash_bonus_bp: int       # 패리 위력 비교 보정
+    passive: bool             # 비선공: 먼저 공격받기 전에는 공격하지 않는다
+    exposed_on_defended: bool  # 자기 공격이 가드·회피로 막혀 굳어 있는 동안 방향 보정·방어력이 무시된다
+    pack: bool                # 무리: 같은 종이 한 대상을 노리고, 정면이 잡혀 있으면 옆·뒤로 돈다
+    getup_t: int              # 넘어졌을 때 기상 시간
     reaction_t: int
     move_t: int
     turn_speed_bp: int
@@ -295,28 +348,24 @@ class Rules:
     hp_per_level: int
     slots_by_level: tuple[tuple[int, int], ...]
     level1_stat_points: int
-    weight_limit: int
+    carry_limit: int
     move_cell_t: int
     move_agi_reduction_bp: int
     move_max_reduction_bp: int
-    overweight_penalty_bp: int
+    carry_over_penalty_bp: int
     move_max_cells: int
     wait_max_t: int
     stances: tuple[StanceRule, ...]
     min_success_bp: int
     max_success_bp: int
-    attributes: tuple[AttributeRule, ...]
-    clash_window_t: int
-    clash_draw_margin_bp: int
-    clash_str_bonus_bp: int
-    clash_draw_stun_t: int
-    clash_lose_stun_t: int
+    parry: ParryRule
+    heavy: HeavyRule
+    knockdown: KnockdownRule
+    wear: WearRule
     weight_stun_ticks: int
     weight_break: int
     sizes: tuple[tuple[str, SizeRule], ...]
-    attack_hit_cost: int
-    armor_hit_cost: int
-    warn_bp: tuple[int, ...]
+    durability: DurabilityRule
     pouch_use_t: int
     inventory_use_t: int
     swap_t: int
@@ -340,12 +389,6 @@ class Rules:
             if s.kind == kind:
                 return s
         raise KeyError(kind)
-
-    def attribute(self, attr: str) -> AttributeRule:
-        for a in self.attributes:
-            if a.id == attr:
-                return a
-        raise KeyError(attr)
 
     def size(self, size: str) -> SizeRule:
         for k, v in self.sizes:
@@ -415,12 +458,12 @@ def _parse_rules(raw: Any) -> Rules:
     base_hp, hp_per_level = pl.int("base_hp"), pl.int("hp_per_level")
     slots = tuple((int(a), int(b)) for a, b in pl.get("skill_slots_by_level"))
     stat_points = pl.int("level1_stat_points")
-    weight_limit = pl.int("weight_limit")
+    carry_limit = pl.int("carry_limit")
     pl.done()
 
     mv = r.sub("move")
     move = (t(mv.int("cell_frames")), mv.int("agi_reduction_bp"), mv.int("max_reduction_bp"),
-            mv.int("overweight_penalty_bp"), mv.int("max_cells"))
+            mv.int("carry_over_penalty_bp"), mv.int("max_cells"))
     mv.done()
 
     st_all = r.sub("stances")
@@ -434,34 +477,31 @@ def _parse_rules(raw: Any) -> Rules:
         stances.append(StanceRule(
             kind=kind, name=s.str("name"),
             startup_t=t(s.int("startup_frames")), min_hold_t=t(s.int("min_hold_frames")),
-            base_bp=s.int("base_bp"), agi_bonus_bp=s.int("agi_bonus_bp"),
+            base_bp=s.int("base_bp"), str_bonus_bp=s.int("str_bonus_bp"), agi_bonus_bp=s.int("agi_bonus_bp"),
             requires_weapon=s.bool("requires_weapon"), roll_per_attack=(roll == "attack"),
-            chip_bp=succ.int("chip_bp"), durability_bp=succ.int("durability_bp"),
-            defender_stun_bp=succ.int("defender_stun_bp"), advantage_t=t(succ.int("advantage_frames")),
-            weight_bonus=succ.bool("weight_bonus"),
+            chip_bp=succ.int("chip_bp"), defender_stun_bp=succ.int("defender_stun_bp"),
+            advantage_t=t(succ.int("advantage_frames")),
             fail_damage_bp=fail.int("damage_bp"), fail_extra_stun_t=t(fail.int("extra_stun_frames")),
         ))
         succ.done(); fail.done(); s.done()
     st_all.done()
 
-    attrs: list[AttributeRule] = []
-    at_all = r.sub("attributes")
-    for attr_id in sorted(at_all.raw):
-        if attr_id.startswith("_"):
-            continue
-        a = at_all.sub(attr_id)
-        mods_raw = a.get("mods")
-        for k in mods_raw:
-            if k not in STANCE_ORDER:
-                raise DataError(f"rules.attributes.{attr_id}.mods: 알 수 없는 태세 '{k}'")
-        attrs.append(AttributeRule(attr_id, a.str("name"), tuple((k, int(mods_raw[k])) for k in STANCE_ORDER if k in mods_raw)))
-        a.done()
-    at_all.done()
+    pa = r.sub("parry")
+    parry = ParryRule(t(pa.int("window_frames")), pa.int("draw_margin_bp"), pa.int("str_bonus_bp"),
+                      t(pa.int("draw_stun_frames")), t(pa.int("lose_stun_frames")), pa.int("lose_knockback_cells"))
+    pa.done()
 
-    cl = r.sub("clash")
-    clash = (t(cl.int("window_frames")), cl.int("draw_margin_bp"), cl.int("str_bonus_bp"),
-             t(cl.int("draw_stun_frames")), t(cl.int("lose_stun_frames")))
-    cl.done()
+    hv = r.sub("heavy")
+    heavy = HeavyRule(hv.int("chip_bp"), hv.int("guard_stun_bp"), hv.int("durability_bp"), hv.int("parry_power_bp"))
+    hv.done()
+
+    kd = r.sub("knockdown")
+    knockdown = KnockdownRule(t(kd.int("getup_frames")), kd.int("wear_bp"))
+    kd.done()
+
+    we = r.sub("wear")
+    wear = WearRule(we.int("base_limit"), we.int("per_str"), we.int("linear"), we.int("quad"))
+    we.done()
 
     wt = r.sub("weight")
     weight_stun, weight_break = wt.int("stun_ticks_per_weight"), wt.int("break_per_weight")
@@ -479,7 +519,8 @@ def _parse_rules(raw: Any) -> Rules:
     sz_all.done()
 
     du = r.sub("durability")
-    dur = (du.int("attack_hit_cost"), du.int("armor_hit_cost"), tuple(int(x) for x in du.get("warn_bp")))
+    durability = DurabilityRule(du.int("skill_hit"), du.int("basic_hit"), du.int("parry"), du.int("guard"),
+                                du.int("armor_per_damage"), tuple(int(x) for x in du.get("warn_bp")))
     du.done()
 
     it = r.sub("items")
@@ -542,17 +583,14 @@ def _parse_rules(raw: Any) -> Rules:
         ticks_per_frame=tpf, fps=fps, time_limit_t=t(r.int("time_limit_frames")),
         arena_radius=radius, ally_spawns=ally_spawns, enemy_spawns=enemy_spawns, footprints=footprints,
         base_hp=base_hp, hp_per_level=hp_per_level, slots_by_level=slots, level1_stat_points=stat_points,
-        weight_limit=weight_limit,
+        carry_limit=carry_limit,
         move_cell_t=move[0], move_agi_reduction_bp=move[1], move_max_reduction_bp=move[2],
-        overweight_penalty_bp=move[3], move_max_cells=move[4],
+        carry_over_penalty_bp=move[3], move_max_cells=move[4],
         wait_max_t=t(r.int("wait_max_frames")),
         stances=tuple(stances), min_success_bp=r.int("min_success_bp"), max_success_bp=r.int("max_success_bp"),
-        attributes=tuple(attrs),
-        clash_window_t=clash[0], clash_draw_margin_bp=clash[1], clash_str_bonus_bp=clash[2],
-        clash_draw_stun_t=clash[3], clash_lose_stun_t=clash[4],
+        parry=parry, heavy=heavy, knockdown=knockdown, wear=wear,
         weight_stun_ticks=weight_stun, weight_break=weight_break,
-        sizes=tuple(sizes),
-        attack_hit_cost=dur[0], armor_hit_cost=dur[1], warn_bp=dur[2],
+        sizes=tuple(sizes), durability=durability,
         pouch_use_t=items[0], inventory_use_t=items[1], swap_t=items[2], quick_swap_t=items[3],
         approx_round_t=approx_round, front_hate=front_hate,
         turn_t=retarget[0], reload_t=retarget[1], reload_remembered_t=retarget[2],
@@ -564,7 +602,7 @@ def _parse_rules(raw: Any) -> Rules:
     return rules
 
 
-def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: str, attr_ids: set[str]) -> AttackDef:
+def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: str) -> AttackDef:
     r = _Reader(raw, where)
 
     def t(frames: int) -> int:
@@ -585,14 +623,10 @@ def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: 
             raise DataError(f"{where}.hits[{i}].at: 0 이상, active 미만이어야 합니다")
         if hits and at_t <= hits[-1].at_t:
             raise DataError(f"{where}.hits: at은 증가 순서여야 합니다")
-        hits.append(HitDef(at_t, h.int("power_bp"), t(h.int("hitstun")), h.int("break", 0), h.int("durability", 0)))
+        hits.append(HitDef(at_t, h.int("power_bp"), t(h.int("hitstun")), h.int("break", 0)))
         h.done()
     if not hits:
         raise DataError(f"{where}.hits: 최소 1타가 필요합니다")
-    attributes = tuple(r.get("attributes", []))
-    for a in attributes:
-        if a not in attr_ids:
-            raise DataError(f"{where}.attributes: 알 수 없는 속성 '{a}'")
     targeting = r.str("targeting", "person")
     if targeting not in TARGETINGS:
         raise DataError(f"{where}.targeting: person|place 이어야 합니다")
@@ -606,15 +640,16 @@ def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: 
         required_proficiency=r.int("required_proficiency", 0),
         range_min=int(rng[0]), range_max=int(rng[1]), targeting=targeting, area=area,
         startup_t=t(r.int("startup")), active_t=active_t, recovery_t=t(r.int("recovery")),
-        cooldown_t=t(r.int("cooldown")), attributes=attributes,
+        cooldown_t=t(r.int("cooldown")),
         lunge=r.bool("lunge", False), can_clash=r.bool("can_clash"), interrupts=r.bool("interrupts"),
         fixed_power=r.int("fixed_power", 0), hits=tuple(hits), weak=r.bool("weak", False),
+        physical=r.physical("physical"), heavy=r.bool("heavy", False), knockdown_bp=r.int("knockdown_bp", 0),
     )
     r.done()
     return d
 
 
-def _parse_enemy(k: str, v: Any, rules: Rules, attr_ids: set[str]) -> EnemyDef:
+def _parse_enemy(k: str, v: Any, rules: Rules) -> EnemyDef:
     tpf = rules.ticks_per_frame
     where = f"enemies.{k}"
     r = _Reader(v, where)
@@ -636,12 +671,8 @@ def _parse_enemy(k: str, v: Any, rules: Rules, attr_ids: set[str]) -> EnemyDef:
         if not isinstance(a_id, str):
             raise DataError(f"{where}.attacks[{i}]: id가 필요합니다")
         a_raw = {kk: vv for kk, vv in a_raw.items() if kk != "id"}
-        attacks.append(_parse_attack(a_raw, a_id, f"{where}.attacks.{a_id}", tpf, "beast", attr_ids))
+        attacks.append(_parse_attack(a_raw, a_id, f"{where}.attacks.{a_id}", tpf, "beast"))
     attack_ids = [a.id for a in attacks]
-    if len(footprint) > 1:
-        for a in attacks:
-            if a.lunge:
-                raise DataError(f"{where}.attacks.{a.id}: 여러 칸을 차지하는 적은 lunge를 쓸 수 없습니다 (미구현)")
 
     def check_attack(key: str, value: str) -> None:
         if value and value not in attack_ids:
@@ -667,19 +698,20 @@ def _parse_enemy(k: str, v: Any, rules: Rules, attr_ids: set[str]) -> EnemyDef:
     stances = tuple(r.get("stances"))
     for s in stances:
         if s not in STANCE_ORDER:
-            raise DataError(f"{where}.stances: 알 수 없는 태세 '{s}'")
+            raise DataError(f"{where}.stances: 적의 태세는 {STANCE_ORDER}뿐입니다 (적은 패리를 쓰지 않는다): '{s}'")
     user, high = r.bool("sword_skill_user"), r.bool("high_grade", False)
-    limit = 3 if high else 2 if user else 1
+    limit = 2 if user or high else 1
     if len(stances) > limit:
         raise DataError(f"{where}.stances: 이 적은 태세를 최대 {limit}개까지 쓸 수 있습니다")
-    if not high and "parry" in stances:
-        raise DataError(f"{where}.stances: 패리는 고등급 적만 쓸 수 있습니다")
 
     if sum(1 for a in attacks if a.weak) > 1:
-        raise DataError(f"{where}.attacks: 약공격(weak)은 몬스터마다 하나만 둘 수 있습니다")
+        raise DataError(f"{where}.attacks: 일반 공격(weak)은 몬스터마다 하나만 둘 수 있습니다")
     vision = r.int("vision")
     if not 0 <= vision <= 3:
         raise DataError(f"{where}.vision: 0(정면)~3(후면까지) 이어야 합니다")
+    sector = tuple(int(x) for x in r.get("sector_damage_bp", [10000] * SECTORS))
+    if len(sector) != SECTORS:
+        raise DataError(f"{where}.sector_damage_bp: [정면, 앞쪽 측면, 뒤쪽 측면, 후면] 4개여야 합니다")
     rise, surround = r.str("rise_attack", ""), r.str("surround_attack", "")
     check_attack("rise_attack", rise)
     check_attack("surround_attack", surround)
@@ -688,7 +720,8 @@ def _parse_enemy(k: str, v: Any, rules: Rules, attr_ids: set[str]) -> EnemyDef:
         sword_skill_user=user, high_grade=high,
         hp=r.int("hp"), attack=r.int("attack"), defense=r.int("defense"),
         stances=stances, stance_bonus_bp=r.int("stance_bonus_bp", 0), vision=vision,
-        auto_defense_bp=r.int("auto_defense_bp"), clash_bonus_bp=r.int("clash_bonus_bp", 0),
+        auto_defense_bp=r.int("auto_defense_bp"), sector_damage_bp=sector, clash_bonus_bp=r.int("clash_bonus_bp", 0),
+        passive=r.bool("passive", False), exposed_on_defended=r.bool("exposed_on_defended", False), pack=r.bool("pack", False), getup_t=r.int("getup_frames") * tpf,
         reaction_t=r.int("reaction_frames") * tpf, move_t=r.int("move_frames") * tpf,
         turn_speed_bp=r.int("turn_speed_bp", 0),
         break_max=r.int("break_max", 0), break_down_t=r.int("break_down_frames", 0) * tpf,
@@ -707,14 +740,13 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
     """raw: {"rules", "skills", "weapons", "armors", "items", "slot_skills", "enemies"} 각 파일의 dict."""
     rules = _parse_rules(raw["rules"])
     tpf = rules.ticks_per_frame
-    attr_ids = {a.id for a in rules.attributes}
 
     def entries(section: str) -> list[tuple[str, Any]]:
         return [(k, v) for k, v in raw[section].items() if not k.startswith("_")]
 
     actions: dict[str, AttackDef] = {}
     for k, v in entries("skills"):
-        a = _parse_attack(v, k, f"skills.{k}", tpf, "sword_skill", attr_ids)
+        a = _parse_attack(v, k, f"skills.{k}", tpf, "sword_skill")
         if a.kind == "beast":
             raise DataError(f"skills.{k}.kind: 플레이어 행동에 beast는 쓸 수 없습니다")
         actions[k] = a
@@ -725,7 +757,8 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
     weapons: dict[str, WeaponDef] = {}
     for k, v in entries("weapons"):
         r = _Reader(v, f"weapons.{k}")
-        weapons[k] = WeaponDef(k, r.str("name"), r.str("family"), r.int("attack"), r.int("speed_bp"), r.int("weight"), r.int("durability"))
+        weapons[k] = WeaponDef(k, r.str("name"), r.str("family"), r.physical("physical"), r.int("attack"),
+                               r.int("speed_bp"), r.int("weight_stat"), r.int("wear_weight"), r.int("min_str"), r.int("durability"))
         r.done()
 
     armors: dict[str, ArmorDef] = {}
@@ -734,7 +767,7 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
         slot = r.str("slot")
         if slot not in ("body", "shield"):
             raise DataError(f"armors.{k}.slot: body|shield 이어야 합니다")
-        armors[k] = ArmorDef(k, r.str("name"), slot, r.int("defense"), r.int("weight"), r.int("durability"),
+        armors[k] = ArmorDef(k, r.str("name"), slot, r.int("defense"), r.int("wear_weight"), r.int("durability"),
                              r.str("requires", ""), r.int("guard_bonus_bp", 0))
         r.done()
 
@@ -759,5 +792,5 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
                                       tuple((s, int(bonus_raw[s])) for s in STANCE_ORDER if s in bonus_raw))
         r.done()
 
-    enemies = {k: _parse_enemy(k, v, rules, attr_ids) for k, v in entries("enemies")}
+    enemies = {k: _parse_enemy(k, v, rules) for k, v in entries("enemies")}
     return GameData(rules, actions, weapons, armors, items, slot_skills, enemies)
