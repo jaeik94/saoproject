@@ -1,7 +1,7 @@
 """파티 전투 엔진 (아군 N 대 적 M, 육각 그리드). 이벤트 큐 기반 타임라인 턴제.
 
 사용법:
-    battle = Battle(data, party_specs, enemy_def, enemy_count, seed)
+    battle = Battle(data, party_specs, enemy_defs, seed)     # enemy_defs: 적 한 마리마다 정의 하나 (종 혼합 가능)
     while (req := battle.advance()) is not None:   # 아군 한 명의 결정이 필요할 때까지 진행
         battle.submit(req.options[i].choice)       # req.actor가 결정할 아군
     battle.result
@@ -51,11 +51,13 @@ class _Event:
 
 
 class Battle:
-    def __init__(self, data: GameData, party: tuple[PlayerSpec, ...] | list[PlayerSpec], enemy: EnemyDef,
-                 enemy_count: int, seed: int, knowledge: str = "none") -> None:
+    def __init__(self, data: GameData, party: tuple[PlayerSpec, ...] | list[PlayerSpec],
+                 enemies: tuple[EnemyDef, ...] | list[EnemyDef], seed: int, knowledge: str = "none",
+                 ally_hp: tuple[int, ...] | None = None) -> None:
+        """ally_hp: 아군 시작 체력 (연속 사냥처럼 이전 전투의 체력을 이어 갈 때). 없으면 최대 체력."""
         if knowledge not in KNOWLEDGE_LEVELS:
             raise ValueError(f"knowledge는 {KNOWLEDGE_LEVELS} 중 하나")
-        if not party or enemy_count < 1:
+        if not party or not enemies:
             raise SetupError("아군과 적이 최소 1명씩 필요합니다")
         self.data = data
         self.rules = data.rules
@@ -78,27 +80,33 @@ class Battle:
         for rank, i in enumerate(order):
             self.fighters[i].rank = rank
         self.allies = list(self.fighters)
+        if ally_hp is not None:
+            if len(ally_hp) != len(self.allies) or any(not 0 < h <= a.max_hp for h, a in zip(ally_hp, self.allies)):
+                raise SetupError("ally_hp: 아군마다 1 이상, 최대 체력 이하")
+            for a, h in zip(self.allies, ally_hp):
+                a.hp = h
         self.enemies: list[Combatant] = []
         self.brains: list[EnemyBrain | None] = [None] * len(self.allies)
-        spawns = iter(self.rules.enemy_spawns)
-        for k in range(enemy_count):
-            e = self._make_enemy(len(self.fighters), k, enemy)
-            for anchor in spawns:
+        for k, ed in enumerate(enemies):
+            nth = sum(1 for x in enemies[:k] if x is ed)          # 같은 종 안에서의 번호 (이름용)
+            e = self._make_enemy(len(self.fighters), k, ed, nth)
+            # 시작 칸은 목록 순서대로, 차지 칸 전체가 들어가는 첫 자리 (크기가 다른 종이 섞여도 앞자리를 다시 본다)
+            for anchor in self.rules.enemy_spawns:
                 cells = [add(anchor, o) for o in e.footprint]
                 if all(c in self.arena and self.occupant(c) is None for c in cells):
                     e.cell = anchor
                     break
             else:
-                raise SetupError(f"{enemy.name} {enemy_count}마리를 둘 자리가 없습니다 (rules.arena.enemy_spawns)")
+                raise SetupError(f"적 {len(enemies)}마리를 둘 자리가 없습니다: {ed.name}에서 막힘 (rules.arena.enemy_spawns)")
             self.fighters.append(e)
             self.enemies.append(e)
-            self.brains.append(EnemyBrain(enemy, self.rules))
+            self.brains.append(EnemyBrain(ed, self.rules))
         for e in self.enemies:
             t = self._nearest_ally(e)
             e.facing = direction_toward(e.cells(), t.cell)
-            e.provoked = not enemy.passive
+            e.provoked = not e.enemy_def.passive
             e.target = t.index if e.provoked else NO_TARGET
-            e.pattern = self.rng.below(len(enemy.patterns))
+            e.pattern = self.rng.below(len(e.enemy_def.patterns))
             self.brain(e).load(self._key(t), t.index, 0)
             self._schedule_decision(e, 0)
         for a in self.allies:
@@ -125,9 +133,9 @@ class Battle:
         c.carry_weight = spec.carry_weight
         return c
 
-    def _make_enemy(self, index: int, k: int, e: EnemyDef) -> Combatant:
+    def _make_enemy(self, index: int, k: int, e: EnemyDef, nth: int) -> Combatant:
         return Combatant(
-            index=index, cid=f"enemy{k}", name=e.name if k == 0 else f"{e.name} {k + 1}", is_ally=False, size=e.size,
+            index=index, cid=f"enemy{k}", name=e.name if nth == 0 else f"{e.name} {nth + 1}", is_ally=False, size=e.size,
             max_hp=e.hp, hp=e.hp, cell=(0, 0), footprint=e.footprint, str_=0, agi=0,
             base_power=e.attack, defense=e.defense, clash_bonus_bp=e.clash_bonus_bp, enemy_def=e,
         )
@@ -193,15 +201,21 @@ class Battle:
                 return False
         return True
 
-    def front_ally(self, e: Combatant) -> Combatant | None:
-        """적의 정면 인접 칸에 선 아군 (여럿이면 지금 대상, 그다음 결정 순서)."""
-        cands = [a for a in self.allies if a.alive and unit_distance(e, a) == 1 and sector(e.cells(), e.facing, a.cell) == FRONT]
-        if not cands:
-            return None
-        for a in cands:
-            if a.index == e.target:
-                return a
-        return min(cands, key=lambda a: a.rank)
+    def in_window(self, e: Combatant) -> bool:
+        """적이 틈인가: 맞아서 굳음·무력화·넘어짐·가드 경직·공격 후딜·이동. 대기·준비·프리모션·판정 중·방향 전환·대상 전환은 틈이 아니다."""
+        if e.busy in (HITSTUN, BROKEN, KNOCKDOWN, STANCE, MOVE):
+            return True
+        act = e.action
+        return e.busy == ATTACK and act is not None and self.now >= act.active_end
+
+    def sight_hate(self, e: Combatant, a: Combatant) -> int:
+        """적에게 붙어 선 아군의 기본 헤이트: 정면 > 그 밖의 시야 > 시야 밖 0."""
+        if e.enemy_def is None or unit_distance(e, a) != 1:
+            return 0
+        s = sector(e.cells(), e.facing, a.cell)
+        if s == FRONT:
+            return self.rules.front_hate
+        return self.rules.vision_hate if s <= e.enemy_def.vision else 0
 
     def facing_of(self, c: Combatant) -> int:
         """적은 바라보는 방향. 아군은 가장 최근에 공격한 적(없으면 가장 가까운 적) 쪽을 본다. 이동해도 시선은 적에게."""
@@ -236,8 +250,8 @@ class Battle:
         return max(r.min_success_bp, min(r.max_success_bp, bp))
 
     def can_auto(self, dfn: Combatant, atk: Combatant) -> bool:
-        """자동 대응 가능: 대기·기다리기·태세 유지·이동 중이고, 공격자가 시야 구역 안."""
-        if dfn.busy not in (READY, WAIT, STANCE_HOLD, MOVE) or not self.auto_kind(dfn):
+        """자동 대응 가능: 대기·기다리기·태세 유지·이동 중이고, 공격자가 시야 구역 안. 기상 후 수색 중인 적은 무방비."""
+        if dfn.busy not in (READY, WAIT, STANCE_HOLD, MOVE) or not self.auto_kind(dfn) or self.now < dfn.search_until:
             return False
         vision = dfn.enemy_def.vision if dfn.enemy_def is not None else self.rules.auto.ally_vision
         return sector(dfn.cells(), self.facing_of(dfn), self._nearest_cell(atk.cells(), dfn.cells())) <= vision
@@ -451,26 +465,35 @@ class Battle:
         if c.is_ally:
             if act.kind == "attack" and act.attack is not None:
                 key = self._key(c)
-                for e in self.enemies:
-                    if e.alive:
-                        self.brain(e).observe(key, act.attack.id)
                 target = self.fighters[act.target]
                 if not target.is_ally and not target.provoked:
                     self._provoke(target, c)
-                self._check_reaction(c, act)
+                self._check_reaction(c, act)        # 이번 사용을 기록하기 전에 본다: 처음 보는 기술에는 반응하지 않는다
+                for e in self.enemies:
+                    if e.alive:
+                        self.brain(e).observe(key, act.attack.id)
+            for a in self.allies:
+                if a is not c:
+                    self._wake_ally(a)              # 동료가 움직이는 것도 보인다: 기다리던 아군도 결정 기회를 얻는다
         else:
             for a in self.allies:
                 self._wake_ally(a)
 
     def _wake_ally(self, a: Combatant) -> None:
-        """적이 행동을 시작하면 기다리던 아군이 반응할 기회를 얻는다."""
+        """적이나 동료가 행동을 시작하면 기다리던 아군이 반응할 기회를 얻는다."""
         if a.alive and a.busy in (WAIT, STANCE_HOLD):
             a.free_token += 1
             self._schedule_decision(a, self.now)
 
     # ------------------------------------------------------------ 적 행동
-    def _provoke(self, e: Combatant, by: Combatant) -> None:
-        """비선공 적이 공격받아 전투에 들어선다. 건드린 사람이 첫 대상."""
+    def _provoke(self, e: Combatant, by: Combatant, kin: bool = True) -> None:
+        """비선공 적이 공격받아 전투에 들어선다. 건드린 사람이 첫 대상. alert_kin이면 같은 종 나머지도 그 사람에게 반응한다."""
+        ed = e.enemy_def
+        assert ed is not None
+        if kin and ed.alert_kin:
+            for m in self.enemies:
+                if m is not e and m.alive and not m.provoked and m.enemy_def is ed:
+                    self._provoke(m, by, kin=False)
         e.provoked = True
         e.target = by.index
         self.brain(e).load(self._key(by), by.index, self.now)
@@ -495,16 +518,27 @@ class Battle:
         alive = [a for a in self.allies if a.alive]
         if not alive:
             return NO_TARGET
-        if e.enemy_def is not None and e.enemy_def.pack:
-            leader = self._pack_leader(e)
-            if leader is not e and leader.target != NO_TARGET and self.fighters[leader.target].alive:
-                return leader.target
+        if self.now < e.search_until:               # 기상 후 수색: 위치 헤이트 무시, 처음 피해를 준 아군
+            f = e.search_found
+            return f if f != NO_TARGET and self.fighters[f].alive else NO_TARGET
         br = self.brain(e)
         br.prune(self.now)
-        front = self.front_ally(e)
+        if e.enemy_def is not None and e.enemy_def.pack:
+            leader = self._pack_leader(e)
+            if leader is not e:
+                # 무리원: 자기에게 일정 이상 피해를 준 상대가 있으면 그쪽, 아니면 우두머리의 대상
+                own, own_dmg = NO_TARGET, self.rules.pack_own_hate - 1
+                for a in alive:
+                    d = br.accumulated(a.index)
+                    if d > own_dmg or (d == own_dmg and own != NO_TARGET and a.index == e.target):
+                        own, own_dmg = a.index, d
+                if own != NO_TARGET:
+                    return own
+                if leader.target != NO_TARGET and self.fighters[leader.target].alive:
+                    return leader.target
         best, best_score = NO_TARGET, -1
         for a in alive:
-            score = br.accumulated(a.index) + (self.rules.front_hate if front is a else 0)
+            score = br.accumulated(a.index) + self.sight_hate(e, a)
             better = score > best_score or (score == best_score and a.index == e.target)
             if better:
                 best, best_score = a.index, score
@@ -518,6 +552,10 @@ class Battle:
         assert ed is not None
         br = self.brain(e)
         br.accrue(self.now)
+        if e.target == NO_TARGET and e.provoked and self.now >= e.search_until:
+            e.target = self._hate_target(e)         # 수색이 끝났는데 대상이 없으면 평소 헤이트로 정한다 (반격보다 먼저)
+            if e.target != NO_TARGET:
+                br.load(self._key(self.fighters[e.target]), e.target, self.now)
         if e.reaction != NO_TARGET:
             if self._react(e):
                 return
@@ -542,6 +580,9 @@ class Battle:
         if sector(e.cells(), e.facing, self._nearest_cell(t.cells(), e.cells())) != FRONT:
             want = direction_toward(e.cells(), t.cell, e.facing)
             dur = turn_ticks(self.rules, e)
+            if e.turn_left_t > 0 and e.turn_target == target and e.turn_facing == want:
+                dur = min(dur, e.turn_left_t)       # 멈췄던 방향 전환을 이어서
+            e.turn_left_t = 0
             if dur > 0:
                 act = self._new_action(e, "turn", TURN, self.now + dur)
                 act.facing, act.target = want, target
@@ -647,8 +688,8 @@ class Battle:
         if act.attack is None or act.target == NO_TARGET:
             return
         e = self.fighters[act.target]
-        if e.is_ally or not e.alive or e.enemy_def is None or not e.enemy_def.stances:
-            return
+        if e.is_ally or not e.alive or e.enemy_def is None or not e.enemy_def.stances or self.now < e.search_until:
+            return                                  # 수색 중에는 반응하지 않는다
         if e.busy not in (READY, WAIT) or act.attack.id not in self.brain(e).triggers(self._key(ally)):
             return
         e.reaction = ally.index
@@ -669,31 +710,35 @@ class Battle:
         assert e.enemy_def is not None
         bonus = self.brain(e).stance_bonus(self._key(ally), act.attack.id)
         best = max(e.enemy_def.stances,
-                   key=lambda s: (stance_chance(self.data, e, s, bonus), -STANCE_ORDER.index(s)))
+                   key=lambda s: (stance_chance(self.data, e, s, bonus, act.attack), -STANCE_ORDER.index(s)))
         self._log(e, L.REACT, best, 0, act.attack.id)
         self._begin_stance(e, best, act.hit_ticks[pending[-1]] + 1)
         return True
 
     def _rise(self, e: Combatant) -> None:
-        """무력화에서 일어서면 광역 공격 후 어그로 초기화, 무작위 대상 (적응 기억은 유지)."""
+        """무력화에서 일어서면 어그로를 초기화하고(적응 기억은 유지) 수색에 들어간다: 위치 헤이트를 무시하고 주위를 살피다가,
+        처음 피해를 준 아군을 대상으로 삼는다. 기상 공격이 있으면 무작위 대상에게 먼저 쓴다."""
         assert e.enemy_def is not None
         e.break_gauge = 0
         br = self.brain(e)
         br.records.clear()
-        alive = [a for a in self.allies if a.alive]
-        new = alive[self.rng.below(len(alive))] if alive else None
-        self._log(e, L.RISE, new.cid if new else "", 0, "aggro_reset")
+        e.search_until, e.search_found = self.now + self.rules.rise_search_t, NO_TARGET
+        self._log(e, L.RISE, "", self.rules.rise_search_t, "aggro_reset")
         e.busy = READY
-        if new is not None and new.index != e.target:
-            load = br.load(self._key(new), new.index, self.now)
-            e.target = new.index
-            if load:
-                self._log(e, L.RELOAD, new.cid, load.reload_t, "remembered" if load.remembered else "new")
         rise = e.enemy_def.rise_attack
-        if rise and new is not None:
+        alive = [a for a in self.allies if a.alive]
+        if rise and alive:
+            new = alive[self.rng.below(len(alive))]
+            if new.index != e.target:
+                load = br.load(self._key(new), new.index, self.now)
+                if load:
+                    self._log(e, L.RELOAD, new.cid, load.reload_t, "remembered" if load.remembered else "new")
+            e.target = new.index
             self._begin_attack(e, e.enemy_def.attack_by_id(rise), new.index)
         else:
+            e.target = NO_TARGET
             self._schedule_decision(e, self.now)
+        self._wake_allies_all()                     # 일어서는 것도 보인다
 
     # ------------------------------------------------------------ 행동 완료
     def _finish_move(self, c: Combatant, act: ActionState) -> None:
@@ -753,6 +798,18 @@ class Battle:
     def _nearest_cell(cells: list[Hex], to: list[Hex]) -> Hex:
         return min(cells, key=lambda c: (min(dist(c, t) for t in to), c[1], c[0]))
 
+    def area_from(self, c: Combatant, a: AttackDef, target: int, cell: Hex) -> list[Hex]:
+        """c가 cell에 서서 target에게 a를 쓰면 범위에 드는 칸 (대상 칸 제외 없음). 봇·미리보기의 위치 판단용."""
+        if a.area == "single":
+            return []
+        own = [add(cell, o) for o in c.footprint]
+        if a.area == "ring1":
+            return [n for x in own for n in neighbors(x) if n not in own]
+        t = self.fighters[target]
+        origin = self._nearest_cell(own, t.cells())
+        aim = self._nearest_cell(t.cells(), [origin])
+        return shape_cells(origin, direction_toward([origin], aim, c.facing), a.area)
+
     def _area_cells(self, atk: Combatant, act: ActionState) -> list[Hex]:
         a = act.attack
         assert a is not None
@@ -793,9 +850,15 @@ class Battle:
                 if f is atk or f is main or not f.alive or not any(c in area for c in f.cells()):
                     continue
                 (victims if self.hostile(atk, f) else friends).append(f)
-        for i, v in enumerate(victims):
+        target = self.fighters[act.target] if act.target != NO_TARGET else None
+        if a.can_clash and target is not None and target in victims:
+            j = self._find_clash(atk, act, target)
+            if j >= 0:
+                self._clash(atk, act, idx, target, j)   # 패리는 기술을 취소하는 것과 같다: 아무도 맞지 않는다
+                return
+        for v in victims:
             if atk.alive and v.alive and self.result is None:
-                self._hit_one(atk, act, idx, v, main=(a.targeting == "person" and i == 0))
+                self._hit_one(atk, act, idx, v)
         for f in friends:
             if f.alive and self.result is None:
                 self._friendly_fire(atk, act, a.hits[idx], f)
@@ -816,15 +879,10 @@ class Battle:
         if anchors:
             atk.cell = min(anchors, key=lambda h: (dist(h, atk.cell), h[1], h[0]))
 
-    def _hit_one(self, atk: Combatant, act: ActionState, idx: int, dfn: Combatant, main: bool) -> None:
+    def _hit_one(self, atk: Combatant, act: ActionState, idx: int, dfn: Combatant) -> None:
         a = act.attack
         assert a is not None
         hit = a.hits[idx]
-        if main and a.can_clash:
-            j = self._find_clash(atk, act, dfn)
-            if j >= 0:
-                self._clash(atk, act, idx, dfn, j)
-                return
         if dfn.busy in (BROKEN, KNOCKDOWN):
             self._land(atk, act, hit, dfn, BP, 0)
             return
@@ -886,6 +944,8 @@ class Battle:
         ally_attack, enemy_attack = (act.attack, da.attack) if atk.is_ally else (da.attack, act.attack)
         if ally_attack.kind != "sword_skill" or not enemy_attack.can_clash:
             return -1
+        if unit_distance(atk, dfn) >= self.rules.affinity.ranged_cells:
+            return -1   # 원거리: 소드 스킬이 닿지 않는다
         for j, t in enumerate(da.hit_ticks):
             if not da.consumed[j] and self.now <= t <= self.now + self.rules.parry.window_t:
                 return j
@@ -964,7 +1024,7 @@ class Battle:
                 chance = self.rules.auto.weak_manual_bp   # 약공격은 대응하면 거의 확정
             else:
                 bonus = self.brain(dfn).stance_bonus(self._key(atk), a.id) if not dfn.is_ally and atk.is_ally else 0
-                chance = stance_chance(self.data, dfn, kind, bonus)
+                chance = stance_chance(self.data, dfn, kind, bonus, a)
             ok = self.rng.roll_bp(chance)
             if ok and rule.roll_per_attack:
                 act.guard_locked.append(dfn.index)
@@ -989,11 +1049,13 @@ class Battle:
         stun = hit.hitstun_t * rule.defender_stun_bp // BP
         if a.heavy and kind == "guard":
             stun = stun * heavy.guard_stun_bp // BP
+        recoil = rule.recoil_t if not act.defended else 0     # 가드 반동: 공격당 1회, 양쪽에 같은 만큼
+        stun += recoil
         if dfn.stance is not None and stun > 0:
             until = max(dfn.free_at, self.now + stun) if dfn.busy == STANCE else self.now + stun
             dfn.busy = STANCE
             self._set_free(dfn, until)
-        self._defense_advantage(atk, act, rule.advantage_t)
+        self._defense_advantage(atk, act, rule.advantage_t + recoil)
 
     def _defense_advantage(self, atk: Combatant, act: ActionState, ticks: int) -> None:
         """방어 성공으로 공격측 후딜이 늘어난다. 공격당 1회."""
@@ -1015,7 +1077,20 @@ class Battle:
         dfn.hp -= amount
         self._log(atk, L.HIT, ref, amount, f"{dfn.cid}:{info}")
         if atk.is_ally and not dfn.is_ally:
-            self.brain(dfn).record(self.now, atk.index, amount)
+            a = self.data.actions.get(ref)
+            hate = amount
+            if a is not None and a.kind == "sword_skill" and not self.in_window(dfn):
+                hate = amount * self.rules.open_skill_hate_bp // BP    # 틈이 아닐 때 맞힌 소드 스킬: 강한 헤이트
+            self.brain(dfn).record(self.now, atk.index, hate)
+            if self.now < dfn.search_until and dfn.search_found == NO_TARGET and dfn.hp > 0:
+                dfn.search_found = atk.index           # 수색 중 처음 피해를 준 아군: 그 즉시 대상
+                dfn.target = atk.index
+                self.brain(dfn).load(self._key(atk), atk.index, self.now)
+                self._log(dfn, L.FOUND, atk.cid)
+                if dfn.busy == WAIT:
+                    dfn.free_token += 1
+                    dfn.action, dfn.busy = None, READY
+                    self._schedule_decision(dfn, self.now)
             if not dfn.provoked and dfn.hp > 0:
                 self._provoke(dfn, atk)
         if dfn.hp <= 0:
@@ -1086,13 +1161,29 @@ class Battle:
 
     def _knockdown(self, c: Combatant, a: AttackDef) -> None:
         """넘어짐: 기상할 때까지 행동·가드·자동 대응 불가."""
+        self._keep_turn(c)
         c.action, c.stance, c.combo = None, None, 0
         c.busy = KNOCKDOWN
         t = getup_ticks(self.rules, c)
         self._log(c, L.KNOCKDOWN, a.id, t)
         self._set_free(c, self.now + t)
 
+    def _keep_turn(self, c: Combatant) -> None:
+        """적의 방향 전환이 경직·넘어짐으로 멈추면 남은 시간을 기억한다 (풀리면 이어서 돈다)."""
+        act = c.action
+        if c.is_ally or act is None:
+            return
+        if act.kind == "turn":
+            left = act.end - self.now
+        elif act.kind == "retarget":
+            left = act.turn_done - self.now
+        else:
+            return
+        if left > 0:
+            c.turn_left_t, c.turn_facing, c.turn_target = left, act.facing, act.target
+
     def _apply_stun(self, c: Combatant, until: int) -> None:
+        self._keep_turn(c)
         c.action, c.stance = None, None
         c.busy = HITSTUN
         self._set_free(c, until)

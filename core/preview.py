@@ -71,6 +71,7 @@ class ThreatView:
     name: str = ""
     heavy: bool = False              # 태그 (known일 때만): 중량
     style: str = ""                  # 소드 스킬 유형: single | combo | rush
+    area: bool = False               # 광역
     physical: str = ""               # 물리 속성
     hits_left: int = 0
     hit_in_t: int = -1               # 정확한 값 (known일 때만)
@@ -136,7 +137,8 @@ def _threat(b: Battle, e: Combatant, me: Combatant) -> ThreatView | None:
     approx = _round(hit_in, b.rules.approx_round_t)
     cells = tuple(act.place_cells)
     if b.knowledge == "full":
-        return ThreatView(e.index, a.targeting, cells, approx, True, a.name, a.heavy, a.style, a.physical, len(pending), hit_in,
+        return ThreatView(e.index, a.targeting, cells, approx, True, a.name, a.heavy, a.style, a.area != "single", a.physical,
+                          len(pending), hit_in,
                           e.free_at - b.now, a.weak)
     return ThreatView(e.index, a.targeting, cells, approx, False)
 
@@ -243,7 +245,8 @@ def _attack_option(b: Battle, me: Combatant, a: AttackDef, kind: str, e: Combata
         if pending and e.action is not None and e.action.attack is not None:
             if b.now < e.action.active_start:
                 before = a.interrupts and first < e.action.active_start - b.now
-            if a.kind == "sword_skill" and e.action.attack.can_clash and e.action.target == me.index:
+            ranged = unit_distance(me, e) >= b.rules.affinity.ranged_cells and not e.action.attack.lunge
+            if a.kind == "sword_skill" and e.action.attack.can_clash and e.action.target == me.index and not ranged:
                 parry_hits, parry_total = _parry_match(offsets, [e.action.hit_ticks[i] - b.now for i in pending],
                                                        b.rules.parry.window_t)
                 clash = parry_hits == parry_total
@@ -311,10 +314,13 @@ def build_request(b: Battle, actor: int) -> DecisionRequest:
         if threat is not None and threat.known and threat.weak:
             lo = hi = r.auto.weak_manual_bp
         elif threat is not None and threat.known:
-            lo = hi = stance_chance(b.data, me, kind)
+            e_act = b.fighters[threat.attacker].action
+            lo = hi = stance_chance(b.data, me, kind, 0, e_act.attack if e_act is not None else None)
         else:
-            lo = stance_chance(b.data, me, kind)          # 정보가 없으면 일반 공격일 가능성까지 범위로
-            hi = max(lo, r.auto.weak_manual_bp)
+            # 정보가 없으면 공격 종류를 모른다: 회피가 불리한 공격(돌진·광역)부터 일반 공격까지 범위로
+            worst = r.affinity.evade_rush_bp + r.affinity.evade_area_bp if kind == "evade" else 0
+            lo = stance_chance(b.data, me, kind, worst)
+            hi = max(stance_chance(b.data, me, kind), r.auto.weak_manual_bp)
         in_time = rule.startup_t <= threat.hit_in_t if threat is not None and threat.known else None
         opts.append(OptionView(ActionChoice("stance", kind), rule.name, rule.startup_t + rule.min_hold_t,
                                chance_lo=lo, chance_hi=hi, stance_in_time=in_time, line=_stance_line(rule)))

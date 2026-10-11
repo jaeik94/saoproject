@@ -1,5 +1,5 @@
 {
-  "_note": "슬롯 스킬 정의. kind: weapon(무기 계열, 해당 계열 소드 스킬 사용 가능)|defense(태세 성공률 보너스)|equip(장비 착용 조건). 수치는 임시값.",
+  "_note": "슬롯 스킬 정의. kind: weapon(무기 계열, 해당 계열 소드 스킬 사용 가능)|defense(태세 성공률 보너스, no_shield면 방패 없이 무기로 막을 때만)|equip(장비 착용 조건). 수치는 임시값.",
 
   "one_handed_sword": { "name": "한손검",     "kind": "weapon", "family": "one_handed_sword" },
   "rapier":           { "name": "세검",       "kind": "weapon", "family": "rapier" },
@@ -7,7 +7,7 @@
   "spear":            { "name": "창",         "kind": "weapon", "family": "spear" },
   "two_handed_sword": { "name": "양손검",     "kind": "weapon", "family": "two_handed_sword" },
   "two_handed_axe":   { "name": "양손도끼",   "kind": "weapon", "family": "two_handed_axe" },
-  "weapon_defense":   { "name": "무기 방어",   "kind": "defense", "stance_bonus": { "guard": 800 } },
+  "weapon_defense":   { "name": "무기 방어",   "kind": "defense", "stance_bonus": { "guard": 800 }, "no_shield": true },
   "acrobatics":       { "name": "경업",       "kind": "defense", "stance_bonus": { "evade": 800 } },
   "shield_equip":     { "name": "방패 장비",   "kind": "equip" },
   "light_metal_equip": { "name": "경금속 장비", "kind": "equip" }

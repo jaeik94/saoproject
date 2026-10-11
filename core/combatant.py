@@ -117,6 +117,11 @@ class Combatant:
     pattern: int = 0
     step: int = 0
     reaction: int = NO_TARGET  # 반응할 공격을 시작한 아군 (없으면 NO_TARGET)
+    turn_left_t: int = 0      # 적: 경직 등으로 멈춘 방향 전환의 남은 시간 (풀리면 이어서 돈다)
+    turn_facing: int = 0      # 그 방향 전환의 목표 방향
+    turn_target: int = NO_TARGET
+    search_until: int = 0     # 적: 무력화 기상 후 수색이 끝나는 틱 (그동안 위치 헤이트 무시)
+    search_found: int = NO_TARGET  # 적: 수색 중 처음 피해를 준 아군
     catch_target: int = NO_TARGET  # 일반 공격을 막아 낸 뒤 딜레이 캐치할 상대
     provoked: bool = True     # 비선공 적은 공격받기 전까지 False
     exposed_until: int = 0    # 이 틱까지 방향 보정·방어력 무시 (공격이 막혀 굳은 동안)

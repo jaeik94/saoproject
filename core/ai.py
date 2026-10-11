@@ -118,13 +118,12 @@ class EnemyBrain:
         self.tech[attack_id] = min(self.rules.ai.tech_cap_bp, self.tech.get(attack_id, 0) + self.tech_gain)
 
     def triggers(self, key: str) -> list[str]:
-        """즉시 반응하는 공격: 사람 적응에 따라 개수가 늘고, 자주 본 공격부터 (동률이면 먼저 본 것)."""
+        """즉시 반응하는 공격: 기억 중인 상대에게서 trigger_seen번 이상 본 공격 (먼저 본 순서)."""
         m = self.model(key)
         if m is None:
             return []
-        n = m.person_bp // self.rules.ai.trigger_step_bp
-        order = sorted(range(len(m.seen_ids)), key=lambda i: (-m.seen_counts[i], i))
-        return [m.seen_ids[i] for i in order[:n]]
+        need = self.rules.ai.trigger_seen
+        return [x for x, n in zip(m.seen_ids, m.seen_counts) if n >= need]
 
     def stance_bonus(self, key: str, attack_id: str) -> int:
         m = self.model(key)

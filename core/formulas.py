@@ -64,16 +64,31 @@ def stance_bonus(data: GameData, c: Combatant, stance: str) -> int:
     if c.enemy_def is not None:
         return bp + c.enemy_def.stance_bonus_bp
     for s in c.slot_skills:
-        bp += data.slot_skills[s].bonus_for(stance)
+        sk = data.slot_skills[s]
+        if not (sk.no_shield and c.shield is not None):
+            bp += sk.bonus_for(stance)
     if stance == "guard" and c.shield is not None:
         bp += c.shield.guard_bonus_bp
+    if stance == "guard" and c.weapon is not None:
+        bp += c.weapon.weapon.guard_bp
     return bp
 
 
-def stance_chance(data: GameData, c: Combatant, stance: str, extra_bp: int = 0) -> int:
-    """공격 태그와 태세의 상성 규칙은 미정이라 아직 반영하지 않는다."""
+def affinity_bp(rules: Rules, stance: str, a: AttackDef | None) -> int:
+    """방어 상성: 대상 지정 돌진과 광역은 회피가 불리하다. 연격·중량은 판정 방식과 가드 규칙으로 표현된다."""
+    if a is None or stance != "evade":
+        return 0
+    bp = 0
+    if a.lunge and a.targeting == "person":
+        bp += rules.affinity.evade_rush_bp
+    if a.area != "single":
+        bp += rules.affinity.evade_area_bp
+    return bp
+
+
+def stance_chance(data: GameData, c: Combatant, stance: str, extra_bp: int = 0, attack: AttackDef | None = None) -> int:
     r = data.rules
-    return clamp(stance_bonus(data, c, stance) + extra_bp, r.min_success_bp, r.max_success_bp)
+    return clamp(stance_bonus(data, c, stance) + affinity_bp(r, stance, attack) + extra_bp, r.min_success_bp, r.max_success_bp)
 
 
 def raw_hit_power(c: Combatant, a: AttackDef, hit: HitDef) -> int:
@@ -95,7 +110,10 @@ def clash_power(rules: Rules, c: Combatant, a: AttackDef, hit: HitDef) -> int:
 def hitstun(rules: Rules, target: Combatant, base_t: int, combo: int) -> int:
     size = rules.size(target.size)
     decay = size.decay[combo] if combo < len(size.decay) else size.decay[-1]
-    return base_t * size.hitstun_bp // BP * decay // BP
+    t = base_t * size.hitstun_bp // BP * decay // BP
+    if target.enemy_def is not None:
+        t = t * target.enemy_def.hitstun_taken_bp // BP      # 적 고유: 파티용 강화 개체는 경직이 짧다
+    return t
 
 
 def getup_ticks(rules: Rules, c: Combatant) -> int:

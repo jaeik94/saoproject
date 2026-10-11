@@ -10,11 +10,11 @@ from __future__ import annotations
 
 import math
 import tkinter as tk
-from tkinter import ttk
+from tkinter import messagebox, ttk
 
 from app.loader import load_setup
 from app.text import EventText
-from core.battle import Battle
+from core.battle import Battle, SetupError
 from core.combatant import Combatant
 from core.formulas import wear_limit
 from core.hexgrid import DIRS, Hex, disc
@@ -94,12 +94,12 @@ class BattleWindow:
         top = ttk.Frame(root, padding=6)
         top.pack(fill="x")
         data, _ = load_setup()
-        ttk.Label(top, text="적", font=FONT).pack(side="left")
-        self.enemy_var = tk.StringVar(value="dire_wolf")
-        ttk.Combobox(top, textvariable=self.enemy_var, values=sorted(data.enemies), width=14, state="readonly").pack(side="left", padx=4)
-        ttk.Label(top, text="수", font=FONT).pack(side="left")
-        self.count_var = tk.StringVar(value="1")
-        ttk.Spinbox(top, from_=1, to=len(data.rules.enemy_spawns), textvariable=self.count_var, width=3).pack(side="left", padx=4)
+        ttk.Label(top, text="적 수", font=FONT).pack(side="left")
+        self.count_vars: dict[str, tk.StringVar] = {}
+        for eid in data.enemies:                                   # 종마다 수 (0이면 안 나옴, 섞어서 낼 수 있다)
+            self.count_vars[eid] = tk.StringVar(value="1" if eid == "dire_wolf" else "0")
+            ttk.Label(top, text=data.enemies[eid].name).pack(side="left", padx=(6, 1))
+            ttk.Spinbox(top, from_=0, to=len(data.rules.enemy_spawns), textvariable=self.count_vars[eid], width=2).pack(side="left")
         self.solo_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(top, text="솔로(loadout.json)", variable=self.solo_var).pack(side="left", padx=8)
         self.know_var = tk.BooleanVar(value=True)
@@ -149,11 +149,23 @@ class BattleWindow:
     def new_battle(self) -> None:
         try:
             seed = int(self.seed_var.get())
-            count = max(1, int(self.count_var.get()))
         except ValueError:
-            seed, count = 1, 1
+            seed = 1
         data, party = load_setup(solo=self.solo_var.get())
-        self.b = Battle(data, party, data.enemies[self.enemy_var.get()], count, seed, "full" if self.know_var.get() else "none")
+        enemies = []
+        for eid, var in self.count_vars.items():
+            try:
+                enemies += [data.enemies[eid]] * max(0, int(var.get()))
+            except ValueError:
+                pass
+        if not enemies:
+            enemies = [data.enemies["dire_wolf"]]
+            self.count_vars["dire_wolf"].set("1")
+        try:
+            self.b = Battle(data, party, enemies, seed, "full" if self.know_var.get() else "none")
+        except SetupError as ex:
+            messagebox.showerror("배치 불가", str(ex))
+            return
         self.tx = EventText(self.b)
         self.shown = 0
         self.log.configure(state="normal")

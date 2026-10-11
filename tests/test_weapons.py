@@ -29,7 +29,7 @@ class WeaponTest(unittest.TestCase):
     def battle(self, build: str, allies: int = 1) -> Battle:
         spec = build_player(self.data, build_named(build))
         party = (spec,) + tuple(build_player(self.data, build_named("한손검")) for _ in range(allies - 1))
-        b = Battle(self.data, party, self.data.enemies["dire_wolf"], 1, 1, "full")
+        b = Battle(self.data, party, (self.data.enemies["dire_wolf"],), 1, "full")
         e = b.enemies[0]
         e.cell, e.facing = (0, 0), 3
         return b
@@ -41,7 +41,7 @@ class WeaponTest(unittest.TestCase):
         families = set()
         for raw in builds():
             spec = build_player(self.data, raw)
-            b = Battle(self.data, (spec,), self.data.enemies["dire_wolf"], 1, 1)
+            b = Battle(self.data, (spec,), (self.data.enemies["dire_wolf"],), 1)
             p = b.allies[0]
             families.add(p.weapon_family)
             self.assertEqual(len(p.sword_skills), 2, raw["name"])
@@ -64,7 +64,7 @@ class WeaponTest(unittest.TestCase):
     def test_overweight_axe_is_slow(self) -> None:
         raw = build_named("양손도끼")
         raw["stats"] = {"str": 4, "agi": 6}                  # 한도 8.4 < 착용 11
-        p = Battle(self.data, (build_player(self.data, raw),), self.data.enemies["dire_wolf"], 1, 1).allies[0]
+        p = Battle(self.data, (build_player(self.data, raw),), (self.data.enemies["dire_wolf"],), 1).allies[0]
         self.assertGreater(wear_multiplier_bp(self.data.rules, p), BP)
 
     def test_spear_long_strike_only_at_two_cells(self) -> None:

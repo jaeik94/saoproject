@@ -4,5 +4,5 @@
   "cloth_shirt":   { "name": "천 셔츠",     "slot": "body",   "defense": 0, "wear_weight": 0,  "durability": 400,  "requires": null },
   "leather_coat":  { "name": "가죽 코트",   "slot": "body",   "defense": 1, "wear_weight": 10, "durability": 800,  "requires": null },
   "bronze_plate":  { "name": "청동 흉갑",   "slot": "body",   "defense": 1, "wear_weight": 40, "durability": 1200, "requires": "light_metal_equip" },
-  "small_buckler": { "name": "스몰 버클러", "slot": "shield", "defense": 0, "wear_weight": 40, "durability": 6300, "requires": "shield_equip", "guard_bonus_bp": 1000 }
+  "small_buckler": { "name": "스몰 버클러", "slot": "shield", "defense": 0, "wear_weight": 40, "durability": 6300, "requires": "shield_equip", "guard_bonus_bp": 2000 }
 }

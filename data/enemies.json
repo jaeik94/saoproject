@@ -1,14 +1,43 @@
 {
   "_note": "적 정의 (1층 1구획, docs/monsters.md). 1구획 몬스터는 일반 공격 · 약한 기술 · 강한 기술 3종만 쓴다. 새로 만든 기술(엄니 올려치기, 급강하 찌르기, 뿔 치기)과 수치는 임시값. 피해 기준(적 공격력 7, 플레이어 체력 55·방어 1): 일반 공격 정타 약 10%, 프리모션 있는 기술 약 30%, 강공격 약 45%.",
-  "_fields": "tier: 등급(small_weak|small_mid|medium_weak|medium_mid, 평가 도구가 data/tiers.json 기준과 맞춤). size: small|medium|large (medium 이상만 무력화). footprint: rules.footprints 키. intelligence: rules.intelligence 키(기억 길이). stances: 대응 태세 (가드·회피 중 소드 스킬 미사용 1개, 사용·고등급 2개. 적은 패리를 쓰지 않는다). vision: 일반 공격 자동 대응 방향 구역 (0 정면, 1 앞쪽 측면, 2 뒤쪽 측면, 3 후면까지). auto_defense_bp: 자동 대응 기본 확률(태세 목록의 첫 번째). sector_damage_bp: 받는 피해 배율 [정면, 앞쪽 측면, 뒤쪽 측면, 후면] (고유 특징). passive: 비선공. exposed_on_defended: 공격이 가드·회피로 막혀 굳은 동안 방향 보정·방어력 무시. pack: 무리 행동. getup_frames: 넘어졌을 때 기상 시간. patterns: 반복하는 공격 순서 (공격 id 또는 'wait:프레임'), 대상이 바뀌면 다른 패턴을 처음부터. surround_attack: 인접한 아군이 surround_count 이상이면 우선 사용. reaction_frames: 트리거 공격을 보고 태세로 대응하기까지. turn_speed_bp: 방향 전환 시간 감소율 (음수면 느림). attacks[]: weak 일반 공격(몬스터마다 하나), physical 물리 속성, heavy 중량, knockdown_bp 넘어짐 확률, lunge 돌진.",
+  "_fields": "tier: 등급(small_weak|small_mid|medium_weak|medium_mid, 평가 도구가 data/tiers.json 기준과 맞춤). size: small|medium|large (medium 이상만 무력화). footprint: rules.footprints 키. intelligence: rules.intelligence 키(기억 길이). stances: 대응 태세 (가드·회피 중 소드 스킬 미사용 1개, 사용·고등급 2개. 적은 패리를 쓰지 않는다). vision: 일반 공격 자동 대응 방향 구역 (0 정면, 1 앞쪽 측면, 2 뒤쪽 측면, 3 후면까지). auto_defense_bp: 자동 대응 기본 확률(태세 목록의 첫 번째). sector_damage_bp: 받는 피해 배율 [정면, 앞쪽 측면, 뒤쪽 측면, 후면] (고유 특징). passive: 비선공. hitstun_taken_bp: 맞아서 굳는 경직 배율(기본 10000, 파티용 강화 개체는 낮게). alert_kin: 비선공이라도 같은 종 하나가 공격받으면 나머지도 그 공격자에게 반응. exposed_on_defended: 공격이 가드·회피로 막혀 굳은 동안 방향 보정·방어력 무시. pack: 무리 행동. getup_frames: 넘어졌을 때 기상 시간. patterns: 반복하는 공격 순서 (공격 id 또는 'wait:프레임'), 대상이 바뀌면 다른 패턴을 처음부터. surround_attack: 인접한 아군이 surround_count 이상이면 우선 사용. reaction_frames: 트리거 공격을 보고 태세로 대응하기까지. turn_speed_bp: 방향 전환 시간 감소율 (음수면 느림). attacks[]: weak 일반 공격(몬스터마다 하나), physical 물리 속성, heavy 중량, knockdown_bp 넘어짐 확률, lunge 돌진.",
 
   "frenzy_boar": {
     "name": "프렌지 보어", "tier": "medium_weak",
     "_trait": "원작. 중형, 단독. 가장 약한 적이지만 체력이 크고 공격은 약하다. 비선공, 약점은 뒤통수(후면 피해 증가), 덩치에 비해 빠른 돌진에 맞으면 넘어진다",
     "size": "medium", "footprint": "tri3", "intelligence": "low",
     "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
-    "sector_damage_bp": [10000, 10000, 10000, 15000], "passive": true, "pack": false, "getup_frames": 60,
+    "sector_damage_bp": [10000, 10000, 10000, 15000], "passive": true, "alert_kin": true, "pack": false, "getup_frames": 60,
     "hp": 180, "attack": 4, "defense": 1, "clash_bonus_bp": 0,
+    "reaction_frames": 8, "move_frames": 14, "turn_speed_bp": -3000,
+    "break_max": 100, "break_down_frames": 120,
+    "patterns": [
+      ["gore", "wait:20", "tusk", "gore", "charge", "wait:25", "gore", "wait:20"]
+    ],
+    "attacks": [
+      { "id": "gore", "name": "들이받기", "weak": true, "physical": "blunt",
+        "range": [1, 1], "startup": 14, "active": 3, "recovery": 20, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 18 }] },
+      { "id": "tusk", "name": "엄니 올려치기", "physical": "pierce",
+        "range": [1, 1], "startup": 16, "active": 3, "recovery": 22, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 20 }] },
+      { "id": "charge", "name": "돌진", "physical": "blunt", "heavy": true, "knockdown_bp": 10000,
+        "range": [1, 3], "startup": 20, "active": 6, "recovery": 32, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 2, "power_bp": 37200, "hitstun": 34 }] }
+    ]
+  },
+
+  "frenzy_boar_elite": {
+    "name": "강화 프렌지 보어", "tier": "medium_weak",
+    "_trait": "[시험용 임시] 파티용 강화 개체: 체력 ×4, 맞아서 굳는 경직 ×0.6. 원작. 중형, 단독. 가장 약한 적이지만 체력이 크고 공격은 약하다. 비선공, 약점은 뒤통수(후면 피해 증가), 덩치에 비해 빠른 돌진에 맞으면 넘어진다",
+    "size": "medium", "footprint": "tri3", "intelligence": "low",
+    "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 15000], "passive": true, "alert_kin": true, "pack": false, "getup_frames": 60,
+    "hitstun_taken_bp": 6000,
+    "hp": 720, "attack": 4, "defense": 1, "clash_bonus_bp": 0,
     "reaction_frames": 8, "move_frames": 14, "turn_speed_bp": -3000,
     "break_max": 100, "break_down_frames": 120,
     "patterns": [
@@ -37,6 +66,35 @@
     "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
     "sector_damage_bp": [10000, 10000, 10000, 10000], "passive": false, "pack": true, "getup_frames": 40,
     "hp": 105, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
+    "reaction_frames": 4, "move_frames": 12, "turn_speed_bp": 0,
+    "patterns": [
+      ["bite", "paw", "wait:15", "lunge", "paw", "bite", "wait:20"],
+      ["paw", "bite", "paw", "lunge", "wait:15"]
+    ],
+    "attacks": [
+      { "id": "paw", "name": "앞발 공격", "weak": true, "physical": "slash",
+        "range": [1, 1], "startup": 8, "active": 2, "recovery": 4, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4 }] },
+      { "id": "bite", "name": "물어뜯기", "physical": "pierce",
+        "range": [1, 1], "startup": 12, "active": 3, "recovery": 18, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 26000, "hitstun": 18 }] },
+      { "id": "lunge", "name": "도약 물기", "physical": "pierce",
+        "range": [1, 3], "startup": 20, "active": 4, "recovery": 26, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 30 }] }
+    ]
+  },
+
+  "dire_wolf_elite": {
+    "name": "강화 다이어 울프", "tier": "small_mid",
+    "_trait": "[시험용 임시] 스위치·교대 운영 시험용 강화 개체. 다이어 울프에 체력 ×4, 공격력 7→9, 지능 보통→높음. 강화 개체 공통 규칙(monsters.md)은 수치 미정이라 따로 만든 것",
+    "size": "small", "footprint": "single", "intelligence": "high",
+    "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 10000], "passive": false, "pack": true, "getup_frames": 40,
+    "hitstun_taken_bp": 5000,
+    "hp": 420, "attack": 9, "defense": 2, "clash_bonus_bp": 0,
     "reaction_frames": 4, "move_frames": 12, "turn_speed_bp": 0,
     "patterns": [
       ["bite", "paw", "wait:15", "lunge", "paw", "bite", "wait:20"],
@@ -87,14 +145,73 @@
     ]
   },
 
+  "plains_wasp_elite": {
+    "name": "강화 초원 말벌", "tier": "small_weak",
+    "_trait": "[시험용 임시] 파티용 강화 개체: 체력 ×4, 맞아서 굳는 경직 ×0.4. 원작(계열만 언급). 소형, 3~4마리. 매우 빠르고 체력이 낮다. 약한 찌르기 연타, 대부분 자동 대응으로 막을 수 있는 일반 공격",
+    "size": "small", "footprint": "single", "intelligence": "low",
+    "sword_skill_user": false, "stances": ["evade"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [10000, 10000, 10000, 10000], "passive": false, "pack": false, "getup_frames": 40,
+    "hitstun_taken_bp": 4000,
+    "hp": 160, "attack": 7, "defense": 0, "clash_bonus_bp": 0,
+    "reaction_frames": 3, "move_frames": 6, "turn_speed_bp": 3000,
+    "patterns": [
+      ["sting", "sting", "double_sting", "wait:10", "sting", "dive_sting", "wait:15", "sting", "sting", "wait:10"]
+    ],
+    "attacks": [
+      { "id": "sting", "name": "침 찌르기", "weak": true, "physical": "thrust",
+        "range": [1, 1], "startup": 6, "active": 2, "recovery": 3, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 4 }] },
+      { "id": "double_sting", "name": "두 번 찌르기", "physical": "thrust",
+        "range": [1, 1], "startup": 14, "active": 8, "recovery": 18, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [
+          { "at": 0, "power_bp": 13000, "hitstun": 10 },
+          { "at": 5, "power_bp": 13000, "hitstun": 14 }] },
+      { "id": "dive_sting", "name": "급강하 찌르기", "physical": "thrust",
+        "range": [1, 3], "startup": 20, "active": 4, "recovery": 26, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 37200, "hitstun": 28 }] }
+    ]
+  },
+
   "grass_beetle": {
     "name": "풀숲 딱정벌레", "tier": "small_mid",
-    "_trait": "원작(계열만 언급). 소형, 단독. 등껍질이 단단해 정면에서 들어가는 피해가 적다 ('위쪽'은 보류). 몸을 굴려 부딪힌다. 넘어뜨리면 뒤집혀 한동안 무방비. 공격이 가드·회피로 막혀 굳은 동안에는 껍질 보정과 방어력이 무시된다",
+    "_trait": "원작(계열만 언급). 소형, 단독. 등껍질이 단단해 뒤에서 들어가는 피해가 적고(후면 ×0.5), 정면(배 쪽) 공격에 약하다(정면 ×1.5) [임시]. 몸을 굴려 부딪힌다. 넘어뜨리면 뒤집혀 한동안 무방비. 공격이 가드·회피로 막혀 굳은 동안에는 껍질 보정과 방어력이 무시된다",
     "size": "small", "footprint": "single", "intelligence": "low",
     "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
-    "sector_damage_bp": [5000, 10000, 10000, 10000], "passive": false, "pack": false, "getup_frames": 150,
+    "sector_damage_bp": [15000, 10000, 10000, 5000], "passive": false, "pack": false, "getup_frames": 150,
     "exposed_on_defended": true,
     "hp": 105, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
+    "reaction_frames": 6, "move_frames": 16, "turn_speed_bp": -2000,
+    "patterns": [
+      ["nip", "horn", "wait:20", "nip", "roll", "wait:20", "nip", "horn", "wait:15"]
+    ],
+    "attacks": [
+      { "id": "nip", "name": "깨물기", "weak": true, "physical": "pierce",
+        "range": [1, 1], "startup": 10, "active": 2, "recovery": 6, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 0, "power_bp": 10000, "hitstun": 6 }] },
+      { "id": "horn", "name": "뿔 치기", "physical": "blunt",
+        "range": [1, 1], "startup": 14, "active": 3, "recovery": 20, "cooldown": 0,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 1, "power_bp": 26000, "hitstun": 20 }] },
+      { "id": "roll", "name": "굴러 부딪히기", "physical": "blunt", "heavy": true,
+        "range": [1, 3], "startup": 22, "active": 6, "recovery": 28, "cooldown": 0, "lunge": true,
+        "can_clash": true, "interrupts": true,
+        "hits": [{ "at": 2, "power_bp": 37200, "hitstun": 28 }] }
+    ]
+  },
+
+  "grass_beetle_elite": {
+    "name": "강화 풀숲 딱정벌레", "tier": "small_mid",
+    "_trait": "[시험용 임시] 파티용 강화 개체: 체력 ×4, 맞아서 굳는 경직 ×0.7. 원작(계열만 언급). 소형, 단독. 등껍질이 단단해 뒤에서 들어가는 피해가 적고(후면 ×0.5), 정면(배 쪽) 공격에 약하다(정면 ×1.5) [임시]. 몸을 굴려 부딪힌다. 넘어뜨리면 뒤집혀 한동안 무방비. 공격이 가드·회피로 막혀 굳은 동안에는 껍질 보정과 방어력이 무시된다",
+    "size": "small", "footprint": "single", "intelligence": "low",
+    "sword_skill_user": false, "stances": ["guard"], "stance_bonus_bp": 0, "vision": 2, "auto_defense_bp": 3000,
+    "sector_damage_bp": [15000, 10000, 10000, 5000], "passive": false, "pack": false, "getup_frames": 150,
+    "exposed_on_defended": true,
+    "hitstun_taken_bp": 7000,
+    "hp": 420, "attack": 7, "defense": 2, "clash_bonus_bp": 0,
     "reaction_frames": 6, "move_frames": 16, "turn_speed_bp": -2000,
     "patterns": [
       ["nip", "horn", "wait:20", "nip", "roll", "wait:20", "nip", "horn", "wait:15"]

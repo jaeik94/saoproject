@@ -28,7 +28,7 @@ class DeterminismTest(unittest.TestCase):
 
     def run_battle(self, seed: int, bot: str = "party", knowledge: str = "none", enemy: str = "dire_wolf",
                    count: int = 1, solo: bool = False) -> list[LogEvent]:
-        return run_one(self.data, self.solo if solo else self.party, enemy, count, seed, bot, knowledge)[1]
+        return run_one(self.data, self.solo if solo else self.party, (self.data.enemies[enemy],) * count, seed, bot, knowledge)[1]
 
     def test_same_seed_same_log(self) -> None:
         for enemy in sorted(self.data.enemies):
@@ -63,7 +63,7 @@ class DeterminismTest(unittest.TestCase):
         code = (
             "import hashlib; from app.batch import run_one; from app.loader import load_setup; "
             "d, p = load_setup(); h = hashlib.sha256(); "
-            "[h.update(repr(e).encode()) for seed in range(1, 6) for e in run_one(d, p, 'dire_wolf', 2, seed, 'party', 'full')[1]]; "
+            "[h.update(repr(e).encode()) for seed in range(1, 6) for e in run_one(d, p, (d.enemies['dire_wolf'],) * 2, seed, 'party', 'full')[1]]; "
             "print(h.hexdigest())"
         )
         outs = set()
@@ -76,3 +76,56 @@ class DeterminismTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MixedEnemiesTest(unittest.TestCase):
+    """다른 종이 섞인 전투: 배치, 이름, 무리는 같은 종끼리만, 결정론."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.data, cls.party = load_setup()
+
+    def mix(self) -> tuple:
+        from app.loader import parse_enemies
+        return parse_enemies(self.data, "dire_wolf:2,frenzy_boar,plains_wasp:2")
+
+    def test_setup(self) -> None:
+        from core.battle import Battle
+        b = Battle(self.data, self.party, self.mix(), 1, "full")
+        self.assertEqual([e.name for e in b.enemies], ["다이어 울프", "다이어 울프 2", "프렌지 보어", "초원 말벌", "초원 말벌 2"])
+        cells = [c for f in b.fighters for c in f.cells()]
+        self.assertEqual(len(cells), len(set(cells)))                         # 칸이 겹치지 않는다
+        wasp = b.enemies[3]
+        self.assertIs(b._pack_leader(b.enemies[1]), b.enemies[0])              # 울프 무리
+        self.assertFalse(wasp.enemy_def.pack)
+        self.assertFalse(b.enemies[2].provoked)                                # 보어는 비선공 그대로
+
+    def test_same_seed_same_log(self) -> None:
+        for seed in (1, 2, 3):
+            a = run_one(self.data, self.party, self.mix(), seed, "party", "full")[1]
+            b = run_one(self.data, self.party, self.mix(), seed, "party", "full")[1]
+            self.assertEqual(a, b)
+
+
+class HuntTest(unittest.TestCase):
+    """연속 사냥: 시작 체력 지정, 같은 시드면 같은 결과."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.data, cls.party = load_setup()
+
+    def test_start_hp(self) -> None:
+        from core.battle import Battle, SetupError
+        e = (self.data.enemies["dire_wolf"],)
+        hp = tuple(p.max_hp - 10 for p in self.party)
+        b = Battle(self.data, self.party, e, 1, "full", hp)
+        self.assertEqual(tuple(a.hp for a in b.allies), hp)
+        with self.assertRaises(SetupError):
+            Battle(self.data, self.party, e, 1, "full", (0,) * len(self.party))
+
+    def test_hunt_same_seed_same_result(self) -> None:
+        from app.hunt import run_hunt
+        e = (self.data.enemies["dire_wolf_elite"],)
+        a = run_hunt(self.data, self.party, e, 3, 7000, 5, ["orig"])
+        b = run_hunt(self.data, self.party, e, 3, 7000, 5, ["orig"])
+        self.assertEqual(a, b)

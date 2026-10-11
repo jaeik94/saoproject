@@ -25,7 +25,8 @@ TURN = "turn"                # 적이 대상 쪽으로 방향 전환
 FRIENDLY_FIRE = "friendly_fire"  # 아군 기술에 아군이 맞음 (ref=공격, info=맞은 아군, value=피해)
 HOWL = "howl"
 BREAK = "break"              # 무력화
-RISE = "rise"                # 무력화에서 일어섬 (어그로 초기화)
+RISE = "rise"                # 무력화에서 일어섬 (어그로 초기화, 수색 시작)
+FOUND = "found"              # 수색 중 처음 피해를 준 아군을 대상으로 삼음 (ref=그 아군)
 HEAL = "heal"                # 휴식 회복
 ITEM_USED = "item_used"
 SWAP = "swap"

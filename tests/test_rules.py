@@ -4,7 +4,7 @@ import unittest
 from app.loader import DATA_DIR, DATA_FILES, read_json
 from core import log as L
 from core.battle import Battle
-from core.combatant import ATTACK, BROKEN, HITSTUN, READY, RETARGET, SWAP, WAIT
+from core.combatant import ATTACK, BROKEN, HITSTUN, NO_TARGET, READY, RETARGET, SWAP, WAIT
 from core.defs import DataError, parse_game_data
 from core.formulas import stance_chance
 from core.hexgrid import DIRS, add
@@ -114,7 +114,7 @@ class CombatTest(unittest.TestCase):
     def make(self, raw: dict | None = None, enemy: str = "dire_wolf", count: int = 1, solo: bool = False) -> Battle:
         data = parse_game_data(raw or raw_data())
         party = (build_player(data, raw_loadout()),) if solo else build_party(data, raw_party())
-        return Battle(data, party, data.enemies[enemy], count, 1, "full")
+        return Battle(data, party, (data.enemies[enemy],) * count, 1, "full")
 
     def place(self, b: Battle, enemy_cell=(0, 0), facing: int = 3, allies=()) -> None:
         """적을 enemy_cell에 facing 방향으로, 아군을 allies 칸에 둔다 (남는 아군은 멀리)."""
@@ -144,7 +144,7 @@ class CombatTest(unittest.TestCase):
     def test_decision_order_by_agi(self) -> None:
         b = self.make()
         req = b.advance()
-        self.assertEqual(b.fighters[req.actor].name, "딜러A")  # 민첩 6
+        self.assertEqual(b.fighters[req.actor].name, "딜러B")  # 민첩 5 (탱커·딜러A는 4)
 
     def test_sword_skill_interrupts_premotion(self) -> None:
         b = self.make(solo=True)
@@ -154,7 +154,8 @@ class CombatTest(unittest.TestCase):
         b._begin_attack(p, b.data.actions["slant"], e.index)             # 첫 타 16f
         b.advance()
         self.assertEqual([x.ref for x in self.events(b, L.INTERRUPT)], ["lunge"])
-        self.assertEqual([x.actor for x in self.events(b, L.HIT)], ["ally0"])
+        self.assertEqual([x.actor for x in self.events(b, L.HIT)][0], "ally0")
+        self.assertFalse([x for x in self.events(b, L.HIT) if x.ref == "lunge"])   # 끊긴 기술은 맞지 않는다
 
     def test_basic_attack_does_not_interrupt(self) -> None:
         b = self.make(solo=True)
@@ -177,7 +178,7 @@ class CombatTest(unittest.TestCase):
         b.advance()
         clashes = self.events(b, L.CLASH)
         self.assertEqual([x.ref for x in clashes], ["win"])
-        self.assertFalse(self.events(b, L.HIT))
+        self.assertFalse([x for x in self.events(b, L.HIT) if x.ref == "bite"])   # 패리한 공격은 피해 0
 
     def test_place_attack_misses_after_moving_out(self) -> None:
         b = self.make(with_wolf_attacks(raw_data(), TEST_SWEEP), solo=True)
@@ -218,7 +219,7 @@ class CombatTest(unittest.TestCase):
         self.place(b, allies=[add((0, 0), DIRS[3]), add((0, 0), DIRS[0])])   # 딜러는 등 뒤
         e = b.enemies[0]
         e.target, e.busy = tank.index, READY
-        b.brain(e).record(b.now, dealer.index, 100)
+        b.brain(e).record(b.now, dealer.index, b.rules.front_hate + 1)
         b._enemy_decide(e)
         self.assertEqual(e.busy, RETARGET)
         self.assertEqual(e.target, dealer.index)
@@ -231,14 +232,25 @@ class CombatTest(unittest.TestCase):
         self.place(b, allies=[(-1, 0)])
         p, e = b.allies[0], b.enemies[0]
         m = b.brain(e).model(b._key(p))
-        m.person_bp = b.rules.ai.trigger_step_bp            # 트리거 1개
-        m.seen_ids, m.seen_counts = ["slant"], [3]
+        m.seen_ids, m.seen_counts = ["slant"], [1]         # 한 번 본 기술 → 트리거
         e.busy = WAIT
         b._begin_attack(p, b.data.actions["slant"], e.index)
         b.advance()
         reacts = self.events(b, L.REACT)
         self.assertEqual([(x.ref, x.info) for x in reacts], [("evade", "slant")])
         self.assertTrue(self.events(b, L.STANCE_OK) or self.events(b, L.STANCE_FAIL))
+
+    def test_first_use_not_reacted_second_use_reacted(self) -> None:
+        b = self.make(solo=True)
+        self.place(b, allies=[(-1, 0)])
+        p, e = b.allies[0], b.enemies[0]
+        key = b._key(p)
+        self.assertNotIn("slant", b.brain(e).triggers(key))
+        e.busy = WAIT
+        b._begin_attack(p, b.data.actions["slant"], e.index)    # 처음: 반응 없음, 이제 본 기술
+        self.assertEqual(e.reaction, NO_TARGET)
+        self.assertFalse(self.events(b, L.REACT))
+        self.assertIn("slant", b.brain(e).triggers(key))
 
     def test_untriggered_attack_no_reaction(self) -> None:
         b = self.make(solo=True)
@@ -331,7 +343,7 @@ class CombatTest(unittest.TestCase):
         lo["spare_weapons"] = ["iron_rapier"]
         lo["quick_change"] = True
         data = parse_game_data(raw_data())
-        b = Battle(data, (build_player(data, lo),), data.enemies["dire_wolf"], 1, 1, "full")
+        b = Battle(data, (build_player(data, lo),), (data.enemies["dire_wolf"],), 1, "full")
         p = b.allies[0]
         b._begin_simple(p, "swap", SWAP, b.rules.quick_swap_t, "", 0)
         b.advance()
@@ -342,3 +354,48 @@ class CombatTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class KinTest(unittest.TestCase):
+    """보어: 하나를 건드리면 같은 종 나머지도 반응. 울프: 무리원은 자기에게 피해를 준 상대를 노린다."""
+
+    make = CombatTest.make
+    events = CombatTest.events
+
+    def test_boar_kin_alert(self) -> None:
+        b = self.make(enemy="frenzy_boar", count=2)
+        b0, b1 = b.enemies
+        a = b.allies[1]
+        self.assertFalse(b0.provoked or b1.provoked)
+        b._provoke(b0, a)
+        self.assertTrue(b0.provoked and b1.provoked)
+        self.assertEqual((b0.target, b1.target), (a.index, a.index))
+        self.assertEqual(len(self.events(b, L.PROVOKE)), 2)
+
+    def test_wolf_minion_own_hate(self) -> None:
+        b = self.make(count=3)
+        leader, m1, m2 = b.enemies
+        pa, pb = b.allies[0], b.allies[1]
+        leader.target = pa.index
+        b.brain(leader).record(b.now, pa.index, 30)            # A가 우두머리를 때림
+        self.assertEqual([b._hate_target(e) for e in (m1, m2)], [pa.index, pa.index])
+        b.brain(m1).record(b.now, pb.index, b.rules.pack_own_hate)   # B가 부하1을 때림
+        self.assertEqual(b._hate_target(m1), pb.index)
+        self.assertEqual(b._hate_target(m2), pa.index)
+        self.assertEqual(b._hate_target(leader), pa.index)
+        b2 = self.make(count=3)
+        b2.enemies[0].target = b2.allies[0].index
+        b2.brain(b2.enemies[1]).record(b2.now, b2.allies[1].index, b2.rules.pack_own_hate - 1)   # 기준 미만
+        self.assertEqual(b2._hate_target(b2.enemies[1]), b2.allies[0].index)
+
+
+class WakeTest(unittest.TestCase):
+    make = CombatTest.make
+
+    def test_waiting_ally_wakes_when_teammate_acts(self) -> None:
+        b = self.make()
+        a0, a1 = b.allies[0], b.allies[1]
+        b._begin_wait(a0, 10 ** 6)
+        token = a0.free_token
+        b._begin_attack(a1, b.data.actions["basic_attack"], b.enemies[0].index)
+        self.assertGreater(a0.free_token, token)       # 깨어나 결정 기회를 얻음

@@ -1,6 +1,7 @@
 """봇으로 전투를 여러 번 돌려 CSV 로그를 남긴다.
 
     python -m app.batch --n 200 --enemy dire_wolf --count 2 --knowledge full
+    python -m app.batch --n 200 --enemy "dire_wolf:2,frenzy_boar" --knowledge full   (종 혼합)
     python -m app.batch --solo --n 200          # loadout.json 한 명
 """
 from __future__ import annotations
@@ -13,9 +14,9 @@ import time
 from pathlib import Path
 
 from app.bots import BOTS
-from app.loader import DATA_DIR, LOG_DIR, load_setup, read_json
-from core.battle import Battle
-from core.defs import GameData
+from app.loader import DATA_DIR, LOG_DIR, load_setup, parse_enemies, read_json
+from core.battle import Battle, SetupError
+from core.defs import EnemyDef, GameData
 from core.loadout import PlayerSpec
 from core.log import BattleResult, LogEvent
 
@@ -23,9 +24,9 @@ from core.log import BattleResult, LogEvent
 MAX_DECISIONS = 50000
 
 
-def run_one(data: GameData, party: tuple[PlayerSpec, ...], enemy_id: str, count: int, seed: int, bot_name: str,
+def run_one(data: GameData, party: tuple[PlayerSpec, ...], enemies: tuple[EnemyDef, ...], seed: int, bot_name: str,
             knowledge: str) -> tuple[BattleResult, list[LogEvent]]:
-    b = Battle(data, party, data.enemies[enemy_id], count, seed, knowledge)
+    b = Battle(data, party, enemies, seed, knowledge)
     bot = BOTS[bot_name](seed)
     decisions = 0
     while (req := b.advance()) is not None:
@@ -43,8 +44,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="전투 배치 시뮬레이션")
     ap.add_argument("--n", type=int, default=200)
     ap.add_argument("--seed", type=int, default=1, help="첫 시드 (이후 +1씩)")
-    ap.add_argument("--enemy", default="dire_wolf")
-    ap.add_argument("--count", type=int, default=1, help="적 수")
+    ap.add_argument("--enemy", default="dire_wolf", help='적 구성. 한 종: dire_wolf, 혼합: "dire_wolf:2,frenzy_boar"')
+    ap.add_argument("--count", type=int, default=1, help="적 수 (--enemy가 한 종이고 수를 적지 않았을 때)")
     ap.add_argument("--solo", action="store_true", help="party.json 대신 loadout.json 한 명")
     ap.add_argument("--bot", default="party", choices=sorted(BOTS))
     ap.add_argument("--knowledge", default="none", choices=["none", "full"])
@@ -54,9 +55,13 @@ def main() -> None:
     args = ap.parse_args()
 
     data, party = load_setup(args.data, args.party, args.solo)
-    if args.enemy not in data.enemies:
-        raise SystemExit(f"적 '{args.enemy}'가 없습니다. 가능: {sorted(data.enemies)}")
-    out: Path = args.out or LOG_DIR / f"{time.strftime('%Y%m%d_%H%M%S')}_{args.enemy}x{args.count}_{args.bot}_{args.knowledge}"
+    spec = args.enemy if ("," in args.enemy or ":" in args.enemy) else f"{args.enemy}:{args.count}"
+    try:
+        enemies = parse_enemies(data, spec)
+    except (SetupError, ValueError) as ex:
+        raise SystemExit(str(ex))
+    label = "+".join(f"{eid}x{n or 1}" for eid, _, n in (p.strip().partition(":") for p in spec.split(",") if p.strip()))
+    out: Path = args.out or LOG_DIR / f"{time.strftime('%Y%m%d_%H%M%S')}_{label}_{args.bot}_{args.knowledge}"
     out.mkdir(parents=True, exist_ok=True)
     tpf = data.rules.ticks_per_frame
 
@@ -70,9 +75,9 @@ def main() -> None:
         we.writerow(["battle", "seed", "tick", "frame", "actor", "event", "ref", "value", "info"])
         for i in range(args.n):
             seed = args.seed + i
-            res, events = run_one(data, party, args.enemy, args.count, seed, args.bot, args.knowledge)
+            res, events = run_one(data, party, enemies, seed, args.bot, args.knowledge)
             wb.writerow([i, seed, res.winner, res.end_tick, res.end_tick // tpf, len(party), sum(1 for h in res.ally_hp if h > 0),
-                         sum(res.ally_hp), sum(p.max_hp for p in party), args.count, sum(res.enemy_hp)])
+                         sum(res.ally_hp), sum(p.max_hp for p in party), len(enemies), sum(res.enemy_hp)])
             for e in events:
                 we.writerow([i, seed, e.tick, e.tick // tpf, e.actor, e.event, e.ref, e.value, e.info])
             wins += res.winner == "party"

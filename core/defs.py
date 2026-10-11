@@ -138,6 +138,7 @@ class WeaponDef:
     wear_weight: int          # 착용 무게 (0.1 단위)
     min_str: int              # 최소 근력 (모자라면 장비할 수 없다)
     durability: int           # 최대 내구도 (기획서 수치 × 10)
+    guard_bp: int             # 이 무기로 가드할 때 성공률 보정
 
 
 @dataclass(slots=True, frozen=True)
@@ -169,6 +170,7 @@ class SlotSkillDef:
     kind: str
     family: str
     stance_bonus: tuple[tuple[str, int], ...]
+    no_shield: bool           # 방패가 없을 때만 보너스 (무기 방어)
 
     def bonus_for(self, stance: str) -> int:
         for k, v in self.stance_bonus:
@@ -191,6 +193,7 @@ class StanceRule:
     chip_bp: int
     defender_stun_bp: int
     advantage_t: int
+    recoil_t: int             # 가드 반동: 막힌 쪽과 막은 쪽이 함께 더 굳는다 (동료가 들어갈 틈)
     fail_damage_bp: int
     fail_extra_stun_t: int
 
@@ -204,6 +207,14 @@ class ParryRule:
     draw_stun_t: int
     lose_stun_t: int
     knockback_cells: int      # 진 아군이 밀려나는 칸 수
+
+
+@dataclass(slots=True, frozen=True)
+class AffinityRule:
+    """방어 상성: 태그가 태세에 주는 영향 중 수치로 둔 것."""
+    evade_rush_bp: int        # 대상 지정 돌진을 회피할 때
+    evade_area_bp: int        # 광역을 회피할 때
+    ranged_cells: int         # 타격 순간 이 칸 수 이상 떨어져 있으면 원거리 (패리 불가)
 
 
 @dataclass(slots=True, frozen=True)
@@ -255,7 +266,7 @@ class AiRule:
     tech_cap_bp: int
     def_person_bp: int        # 적응 → 적 태세 성공률 보너스 계수
     def_tech_bp: int
-    trigger_step_bp: int      # 사람 적응이 이만큼 쌓일 때마다 즉시 반응하는 공격이 1개 늘어남
+    trigger_seen: int         # 기억 중인 상대에게서 이 횟수만큼 본 공격은 트리거가 됨
     retention_mult: int       # 최근 상대 기억 유지 시간 = 기억 길이 × mult
     capacity_per_t: int       # 기억 용량 = 1 + 기억 길이 / 이 값
     profile_carry_bp: int     # 같은 사람의 다른 패턴으로 이어지는 적응 비율
@@ -310,6 +321,8 @@ class EnemyDef:
     sector_damage_bp: tuple[int, ...]   # 받는 피해 배율: 정면, 앞쪽 측면, 뒤쪽 측면, 후면 (고유 특징: 단단한 정면, 약점 등)
     clash_bonus_bp: int       # 패리 위력 비교 보정
     passive: bool             # 비선공: 먼저 공격받기 전에는 공격하지 않는다
+    alert_kin: bool           # 같은 종 하나가 공격받으면 나머지도 반응
+    hitstun_taken_bp: int     # 맞아서 굳는 경직 배율 (파티용 강화 개체는 낮게)
     exposed_on_defended: bool  # 자기 공격이 가드·회피로 막혀 굳어 있는 동안 방향 보정·방어력이 무시된다
     pack: bool                # 무리: 같은 종이 한 대상을 노리고, 정면이 잡혀 있으면 옆·뒤로 돈다
     getup_t: int              # 넘어졌을 때 기상 시간
@@ -359,6 +372,7 @@ class Rules:
     min_success_bp: int
     max_success_bp: int
     parry: ParryRule
+    affinity: AffinityRule
     heavy: HeavyRule
     knockdown: KnockdownRule
     wear: WearRule
@@ -372,6 +386,12 @@ class Rules:
     quick_swap_t: int
     approx_round_t: int
     front_hate: int
+    vision_hate: int          # 정면 밖의 시야 구역에 붙어 선 아군의 기본 헤이트
+    pace_recovery_bp: int     # 전체 템포: 모든 공격의 후딜 배율
+    pace_hitstun_bp: int      # 전체 템포: 모든 공격의 타격 경직 배율
+    pack_own_hate: int
+    rise_search_t: int        # 무력화 기상 후 수색 시간 (위치 헤이트 무시, 처음 피해를 준 아군이 대상)
+    open_skill_hate_bp: int   # 틈이 아닐 때 맞힌 소드 스킬 피해의 헤이트 배율        # 무리원이 우두머리 대신 자기 상대를 노리는 누적 피해
     turn_t: int
     reload_t: int
     reload_remembered_t: int
@@ -480,7 +500,7 @@ def _parse_rules(raw: Any) -> Rules:
             base_bp=s.int("base_bp"), str_bonus_bp=s.int("str_bonus_bp"), agi_bonus_bp=s.int("agi_bonus_bp"),
             requires_weapon=s.bool("requires_weapon"), roll_per_attack=(roll == "attack"),
             chip_bp=succ.int("chip_bp"), defender_stun_bp=succ.int("defender_stun_bp"),
-            advantage_t=t(succ.int("advantage_frames")),
+            advantage_t=t(succ.int("advantage_frames")), recoil_t=t(succ.int("recoil_frames")),
             fail_damage_bp=fail.int("damage_bp"), fail_extra_stun_t=t(fail.int("extra_stun_frames")),
         ))
         succ.done(); fail.done(); s.done()
@@ -490,6 +510,10 @@ def _parse_rules(raw: Any) -> Rules:
     parry = ParryRule(t(pa.int("window_frames")), pa.int("draw_margin_bp"), pa.int("str_bonus_bp"),
                       t(pa.int("draw_stun_frames")), t(pa.int("lose_stun_frames")), pa.int("lose_knockback_cells"))
     pa.done()
+
+    af = r.sub("affinity")
+    affinity = AffinityRule(af.int("evade_rush_bp"), af.int("evade_area_bp"), af.int("ranged_cells"))
+    af.done()
 
     hv = r.sub("heavy")
     heavy = HeavyRule(hv.int("chip_bp"), hv.int("guard_stun_bp"), hv.int("durability_bp"), hv.int("parry_power_bp"))
@@ -533,6 +557,13 @@ def _parse_rules(raw: Any) -> Rules:
 
     ha = r.sub("hate")
     front_hate = ha.int("front")
+    vision_hate = ha.int("vision")
+    pc = r.sub("pace")
+    pace_recovery_bp, pace_hitstun_bp = pc.int("recovery_bp"), pc.int("hitstun_bp")
+    pc.done()
+    pack_own_hate = ha.int("pack_own")
+    rise_search_t = t(ha.int("rise_search_frames"))
+    open_skill_hate_bp = ha.int("open_skill_bp")
     ha.done()
 
     rt = r.sub("retarget")
@@ -563,11 +594,11 @@ def _parse_rules(raw: Any) -> Rules:
 
     ai = r.sub("ai")
     ai_rule = AiRule(ai.int("person_rate"), ai.int("person_cap_bp"), ai.int("tech_rate"), ai.int("tech_cap_bp"),
-                     ai.int("def_person_bp"), ai.int("def_tech_bp"), ai.int("trigger_step_bp"),
+                     ai.int("def_person_bp"), ai.int("def_tech_bp"), ai.int("trigger_seen"),
                      ai.int("retention_mult"), t(ai.int("capacity_per_frames")), ai.int("profile_carry_bp"))
     ai.done()
-    if ai_rule.trigger_step_bp <= 0 or ai_rule.capacity_per_t <= 0:
-        raise DataError("rules.ai: trigger_step_bp, capacity_per_frames는 0보다 커야 합니다")
+    if ai_rule.trigger_seen <= 0 or ai_rule.capacity_per_t <= 0:
+        raise DataError("rules.ai: trigger_seen, capacity_per_frames는 0보다 커야 합니다")
 
     intel: list[tuple[str, int]] = []
     in_all = r.sub("intelligence")
@@ -588,11 +619,11 @@ def _parse_rules(raw: Any) -> Rules:
         carry_over_penalty_bp=move[3], move_max_cells=move[4],
         wait_max_t=t(r.int("wait_max_frames")),
         stances=tuple(stances), min_success_bp=r.int("min_success_bp"), max_success_bp=r.int("max_success_bp"),
-        parry=parry, heavy=heavy, knockdown=knockdown, wear=wear,
+        parry=parry, affinity=affinity, heavy=heavy, knockdown=knockdown, wear=wear,
         weight_stun_ticks=weight_stun, weight_break=weight_break,
         sizes=tuple(sizes), durability=durability,
         pouch_use_t=items[0], inventory_use_t=items[1], swap_t=items[2], quick_swap_t=items[3],
-        approx_round_t=approx_round, front_hate=front_hate,
+        approx_round_t=approx_round, front_hate=front_hate, vision_hate=vision_hate, pace_recovery_bp=pace_recovery_bp, pace_hitstun_bp=pace_hitstun_bp, pack_own_hate=pack_own_hate, rise_search_t=rise_search_t, open_skill_hate_bp=open_skill_hate_bp,
         turn_t=retarget[0], reload_t=retarget[1], reload_remembered_t=retarget[2],
         rest_interval_t=rest[0], rest_regen=rest[1],
         ff_damage_bp=friendly[0], ff_stun_t=friendly[1],
@@ -602,7 +633,9 @@ def _parse_rules(raw: Any) -> Rules:
     return rules
 
 
-def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: str) -> AttackDef:
+def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: str,
+                  pace: tuple[int, int] = (10000, 10000)) -> AttackDef:
+    """pace: (후딜 배율, 타격 경직 배율) 만분율 (rules.pace)."""
     r = _Reader(raw, where)
 
     def t(frames: int) -> int:
@@ -623,7 +656,7 @@ def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: 
             raise DataError(f"{where}.hits[{i}].at: 0 이상, active 미만이어야 합니다")
         if hits and at_t <= hits[-1].at_t:
             raise DataError(f"{where}.hits: at은 증가 순서여야 합니다")
-        hits.append(HitDef(at_t, h.int("power_bp"), t(h.int("hitstun")), h.int("break", 0)))
+        hits.append(HitDef(at_t, h.int("power_bp"), t(h.int("hitstun")) * pace[1] // 10000, h.int("break", 0)))
         h.done()
     if not hits:
         raise DataError(f"{where}.hits: 최소 1타가 필요합니다")
@@ -639,7 +672,7 @@ def _parse_attack(raw: Any, attack_id: str, where: str, tpf: int, default_kind: 
         id=attack_id, name=r.str("name"), kind=kind, family=r.str("family", ""),
         required_proficiency=r.int("required_proficiency", 0),
         range_min=int(rng[0]), range_max=int(rng[1]), targeting=targeting, area=area,
-        startup_t=t(r.int("startup")), active_t=active_t, recovery_t=t(r.int("recovery")),
+        startup_t=t(r.int("startup")), active_t=active_t, recovery_t=t(r.int("recovery")) * pace[0] // 10000,
         cooldown_t=t(r.int("cooldown")),
         lunge=r.bool("lunge", False), can_clash=r.bool("can_clash"), interrupts=r.bool("interrupts"),
         fixed_power=r.int("fixed_power", 0), hits=tuple(hits), weak=r.bool("weak", False),
@@ -671,7 +704,8 @@ def _parse_enemy(k: str, v: Any, rules: Rules) -> EnemyDef:
         if not isinstance(a_id, str):
             raise DataError(f"{where}.attacks[{i}]: id가 필요합니다")
         a_raw = {kk: vv for kk, vv in a_raw.items() if kk != "id"}
-        attacks.append(_parse_attack(a_raw, a_id, f"{where}.attacks.{a_id}", tpf, "beast"))
+        attacks.append(_parse_attack(a_raw, a_id, f"{where}.attacks.{a_id}", tpf, "beast",
+                                     (rules.pace_recovery_bp, rules.pace_hitstun_bp)))
     attack_ids = [a.id for a in attacks]
 
     def check_attack(key: str, value: str) -> None:
@@ -721,7 +755,7 @@ def _parse_enemy(k: str, v: Any, rules: Rules) -> EnemyDef:
         hp=r.int("hp"), attack=r.int("attack"), defense=r.int("defense"),
         stances=stances, stance_bonus_bp=r.int("stance_bonus_bp", 0), vision=vision,
         auto_defense_bp=r.int("auto_defense_bp"), sector_damage_bp=sector, clash_bonus_bp=r.int("clash_bonus_bp", 0),
-        passive=r.bool("passive", False), exposed_on_defended=r.bool("exposed_on_defended", False), pack=r.bool("pack", False), getup_t=r.int("getup_frames") * tpf,
+        passive=r.bool("passive", False), alert_kin=r.bool("alert_kin", False), hitstun_taken_bp=r.int("hitstun_taken_bp", 10000), exposed_on_defended=r.bool("exposed_on_defended", False), pack=r.bool("pack", False), getup_t=r.int("getup_frames") * tpf,
         reaction_t=r.int("reaction_frames") * tpf, move_t=r.int("move_frames") * tpf,
         turn_speed_bp=r.int("turn_speed_bp", 0),
         break_max=r.int("break_max", 0), break_down_t=r.int("break_down_frames", 0) * tpf,
@@ -746,7 +780,7 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
 
     actions: dict[str, AttackDef] = {}
     for k, v in entries("skills"):
-        a = _parse_attack(v, k, f"skills.{k}", tpf, "sword_skill")
+        a = _parse_attack(v, k, f"skills.{k}", tpf, "sword_skill", (rules.pace_recovery_bp, rules.pace_hitstun_bp))
         if a.kind == "beast":
             raise DataError(f"skills.{k}.kind: 플레이어 행동에 beast는 쓸 수 없습니다")
         actions[k] = a
@@ -758,7 +792,8 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
     for k, v in entries("weapons"):
         r = _Reader(v, f"weapons.{k}")
         weapons[k] = WeaponDef(k, r.str("name"), r.str("family"), r.physical("physical"), r.int("attack"),
-                               r.int("speed_bp"), r.int("weight_stat"), r.int("wear_weight"), r.int("min_str"), r.int("durability"))
+                               r.int("speed_bp"), r.int("weight_stat"), r.int("wear_weight"), r.int("min_str"), r.int("durability"),
+                               r.int("guard_bp"))
         r.done()
 
     armors: dict[str, ArmorDef] = {}
@@ -789,7 +824,8 @@ def parse_game_data(raw: dict[str, Any]) -> GameData:
             if s not in STANCE_ORDER:
                 raise DataError(f"slot_skills.{k}.stance_bonus: 알 수 없는 태세 '{s}'")
         slot_skills[k] = SlotSkillDef(k, r.str("name"), kind, r.str("family", ""),
-                                      tuple((s, int(bonus_raw[s])) for s in STANCE_ORDER if s in bonus_raw))
+                                      tuple((s, int(bonus_raw[s])) for s in STANCE_ORDER if s in bonus_raw),
+                                      r.bool("no_shield", False))
         r.done()
 
     enemies = {k: _parse_enemy(k, v, rules) for k, v in entries("enemies")}

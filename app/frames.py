@@ -35,7 +35,7 @@ def main() -> None:
     args = ap.parse_args()
 
     data, party = load_setup(args.data, args.loadout, solo=True)
-    b = Battle(data, party, data.enemies[args.enemy], 1, 0)
+    b = Battle(data, party, (data.enemies[args.enemy],), 0)
     p, e, r = b.allies[0], b.enemies[0], data.rules
     tpf = r.ticks_per_frame
     assert e.enemy_def is not None
@@ -84,7 +84,7 @@ def main() -> None:
             rule = r.stance(kind)
             if rule.requires_weapon and p.weapon is None:
                 continue
-            chance = r.auto.weak_manual_bp if a.weak else stance_chance(data, p, kind)
+            chance = r.auto.weak_manual_bp if a.weak else stance_chance(data, p, kind, 0, a)
             dstun = a.hits[-1].hitstun_t * rule.defender_stun_bp // BP
             if a.heavy and kind == "guard":
                 dstun = dstun * r.heavy.guard_stun_bp // BP

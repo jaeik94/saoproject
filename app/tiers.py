@@ -22,7 +22,7 @@ BOT_RUNS = (("perfect", "full", "완벽 대처"), ("party", "none", "단순"), (
 
 def sword_hits(data, solo, enemy) -> float:
     """솔로 설정의 소드 스킬 평균 피해로 적을 잡는 데 필요한 횟수."""
-    b = Battle(data, solo, enemy, 1, 0)
+    b = Battle(data, solo, (enemy,), 0)
     p, e = b.allies[0], b.enemies[0]
     dmgs = [sum(damage(p, s, h, e, 10000) for h in s.hits) for s in p.sword_skills if s.family == p.weapon_family]
     return enemy.hp / (sum(dmgs) / len(dmgs)) if dmgs else 0.0
@@ -60,7 +60,7 @@ def main() -> None:
                     chip = fail = 0
                     secs = 0.0
                     for i in range(args.n):
-                        res, log = run_one(data, specs, enemy.id, 1, args.seed + i, bot, knowledge)
+                        res, log = run_one(data, specs, (enemy,), args.seed + i, bot, knowledge)
                         wins += res.winner == "party"
                         deaths += sum(1 for h in res.ally_hp if h <= 0)
                         secs += res.end_tick / data.rules.ticks_per_sec

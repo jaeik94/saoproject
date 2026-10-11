@@ -26,7 +26,7 @@ class AutoDefenseTest(unittest.TestCase):
     def make(self, auto_bp: int | None = 10000, solo: bool = True) -> Battle:
         data = parse_game_data(raw_data(auto_bp))
         party = (build_player(data, read_json(DATA_DIR / "loadout.json")),) if solo else build_party(data, read_json(DATA_DIR / "party.json"))
-        b = Battle(data, party, data.enemies["dire_wolf"], 1, 1, "full")
+        b = Battle(data, party, (data.enemies["dire_wolf"],), 1, "full")
         e = b.enemies[0]
         e.cell, e.facing = (0, 0), 3                  # 서쪽을 본다
         far = [(-5, 5), (-4, 5), (-5, 4)]
@@ -67,7 +67,7 @@ class AutoDefenseTest(unittest.TestCase):
     def test_guarding_enemy_catches_with_its_weak_attack(self) -> None:
         """가드하는 적(딱정벌레: 반응 6f, 깨물기 첫 타 10f)도 막아 낸 뒤 반드시 되받아친다."""
         data = parse_game_data(raw_data(10000))
-        b = Battle(data, (build_player(data, read_json(DATA_DIR / "loadout.json")),), data.enemies["grass_beetle"], 1, 1, "full")
+        b = Battle(data, (build_player(data, read_json(DATA_DIR / "loadout.json")),), (data.enemies["grass_beetle"],), 1, "full")
         p, e = b.allies[0], b.enemies[0]
         e.cell, e.facing = (0, 0), 3
         p.cell = add(e.cell, DIRS[3])
@@ -128,6 +128,7 @@ class AutoDefenseTest(unittest.TestCase):
     def test_ally_prefers_evade_with_higher_agi(self) -> None:
         b = self.make(solo=False)
         self.assertEqual(b.auto_kind(b.allies[0]), "guard")    # 근력 6 / 민첩 4
+        b.allies[1].str_, b.allies[1].agi = 4, 6
         self.assertEqual(b.auto_kind(b.allies[1]), "evade")    # 근력 4 / 민첩 6
         self.assertEqual(b.auto_kind(b.allies[2]), "guard")    # 5 / 5 동률 → 가드
 

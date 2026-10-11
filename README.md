@@ -3,14 +3,17 @@
 Python 3.10+ (코어는 표준 라이브러리만, 분석 도구만 pandas). 모든 명령은 이 폴더에서 실행한다.
 
 ```
-python -m app.gui                                   # 창 UI (적 종류·수, 솔로/파티, 정보 유무, 시드 선택)
+python -m app.gui                                   # 창 UI (종마다 적 수 — 섞어서 가능, 솔로/파티, 정보 유무, 시드 선택)
 python -m app.batch --n 200 --enemy dire_wolf --count 2   # 봇으로 여러 판 → logs/<폴더>/
+python -m app.batch --n 200 --enemy "dire_wolf:2,frenzy_boar"   # 종 혼합
 python -m app.batch --n 200 --solo                  # loadout.json 한 명
-#   --bot perfect(완벽 대처, --knowledge full 권장) | party(단순) | basic(평타만) | random
+#   플레이 방식: --bot orig(원작형 교대) | melee(난전형) | spam(평타 연타형) | perfect(각자 솔로형). --knowledge full 권장
+#   기준선: party(단순) | basic(평타만) | random. 봇은 화면에 보이는 정보만 쓴다 (app/bots.py 머리말)
 python -m analysis.summarize logs/<폴더>             # 배치 결과 요약
 python -m app.frames --enemy dire_wolf              # 프레임표 + 반격 창 + 프리모션 끊기·패리 가능 여부
 python -m app.tiers --n 100                         # 적 등급 평가: data/tiers.json 기준표와 봇 결과를 나란히 (1:1, 3:1 × 완벽 대처/단순/평타 봇)
 python -m app.builds --n 100 --bot perfect           # 무기별 1:1 평가 (data/builds.json의 6개 빌드 × 각 적)
+python -m app.hunt --enemy dire_wolf_elite --kills 10 --n 50 --bot orig   # 연속 사냥 (체력 이어 감, 휴식 시간 포함 1마리당 시간)
 python -m unittest discover -s tests -t .           # 테스트 (결정론 포함)
 ```
 

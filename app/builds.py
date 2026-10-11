@@ -41,14 +41,14 @@ def main() -> None:
     for spec in builds:
         cells = []
         for e in enemies:
-            b = Battle(data, (spec,), e, 1, 0)
+            b = Battle(data, (spec,), (e,), 0)
             p, en = b.allies[0], b.enemies[0]
             dmgs = [sum(damage(p, s, h, en, 10000) for h in s.hits) for s in p.sword_skills]
             hits = e.hp / (sum(dmgs) / len(dmgs))
             wins = chip = fail = 0
             secs = 0.0
             for i in range(args.n):
-                res, log = run_one(data, (spec,), e.id, 1, args.seed + i, args.bot, knowledge)
+                res, log = run_one(data, (spec,), (e,), args.seed + i, args.bot, knowledge)
                 wins += res.winner == "party"
                 secs += res.end_tick / data.rules.ticks_per_sec
                 for ev in log:
