@@ -9,6 +9,7 @@
   부르고, 받을 사람(탱커, 없으면 다른 딜러)이 정면 옆에서 기다리다 들어온다. 딜러는 틈에 정면을 비운다.
 - melee(난전형): 예고는 막지만 위치·어그로는 신경 쓰지 않고, 쿨타임이 돌면 바로 가장 센 기술을 쓴다.
 - spam(평타 연타형): 예고는 막고, 나머지는 일반 공격만.
+- backspam: 원작형과 같지만 딜러가 틈과 관계없이 시야 밖에서 쿨타임마다 소드 스킬 (비교용).
 - perfect(각자 솔로형): 각자 혼자 싸우듯 대응한다. 예고 대응, 틈에만 공격, 대상이 아니면 시야 밖에서 친다.
   자기와 아군의 범위 기술을 예상해 위치를 잡는다.
 - party(단순)·basic(평타만)·random: 예전 평가 도구용 기준선.
@@ -620,4 +621,16 @@ class SpamBot(PerfectBot):
         return _approach(b, req, me) or _wait(req)
 
 
-BOTS = {"orig": OrigBot, "melee": MeleeBot, "spam": SpamBot, "perfect": PerfectBot, "party": PartyBot, "basic": BasicBot, "random": RandomBot}
+class BackSpamBot(OrigBot):
+    """원작형 교대와 같지만, 노려지지 않은 딜러가 틈과 관계없이 시야 밖에서 쿨타임마다 가장 센 소드 스킬을 쓴다.
+    "틈에만 치기"와 비교해 강한 헤이트 규칙이 뒤에서 아무 때나 치는 것을 손해로 만드는지 확인하는 용도."""
+
+    def _strike(self, b: Battle, req: DecisionRequest, me: Combatant) -> ActionChoice:
+        skills = _kinds(req, "skill")
+        if skills and not any(e.alive and e.enemy_def is not None and self._seen(e, me.cell) for e in b.enemies):
+            return max(skills, key=lambda o: (_power(b, o), o.choice.ref)).choice
+        return super()._strike(b, req, me)
+
+
+BOTS = {"orig": OrigBot, "backspam": BackSpamBot, "melee": MeleeBot, "spam": SpamBot, "perfect": PerfectBot,
+        "party": PartyBot, "basic": BasicBot, "random": RandomBot}

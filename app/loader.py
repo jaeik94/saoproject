@@ -20,8 +20,13 @@ def read_json(path: Path) -> Any:
         return json.load(f)
 
 
+def read_raw(data_dir: Path = DATA_DIR) -> dict[str, Any]:
+    """데이터 파일 원본 dict (평가 도구가 일부 값을 바꿔 비교할 때)."""
+    return {name: read_json(data_dir / f"{name}.json") for name in DATA_FILES}
+
+
 def load_game_data(data_dir: Path = DATA_DIR) -> GameData:
-    return parse_game_data({name: read_json(data_dir / f"{name}.json") for name in DATA_FILES})
+    return parse_game_data(read_raw(data_dir))
 
 
 def parse_enemies(data: GameData, spec: str) -> tuple[EnemyDef, ...]:

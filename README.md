@@ -7,13 +7,15 @@ python -m app.gui                                   # 창 UI (종마다 적 수 
 python -m app.batch --n 200 --enemy dire_wolf --count 2   # 봇으로 여러 판 → logs/<폴더>/
 python -m app.batch --n 200 --enemy "dire_wolf:2,frenzy_boar"   # 종 혼합
 python -m app.batch --n 200 --solo                  # loadout.json 한 명
-#   플레이 방식: --bot orig(원작형 교대) | melee(난전형) | spam(평타 연타형) | perfect(각자 솔로형). --knowledge full 권장
+#   플레이 방식: --bot orig(원작형 교대) | backspam(원작형, 딜러가 뒤에서 쿨마다) | melee(난전형) | spam(평타 연타형) | perfect(각자 솔로형). --knowledge full 권장
 #   기준선: party(단순) | basic(평타만) | random. 봇은 화면에 보이는 정보만 쓴다 (app/bots.py 머리말)
 python -m analysis.summarize logs/<폴더>             # 배치 결과 요약
 python -m app.frames --enemy dire_wolf              # 프레임표 + 반격 창 + 프리모션 끊기·패리 가능 여부
 python -m app.tiers --n 100                         # 적 등급 평가: data/tiers.json 기준표와 봇 결과를 나란히 (1:1, 3:1 × 완벽 대처/단순/평타 봇)
 python -m app.builds --n 100 --bot perfect           # 무기별 1:1 평가 (data/builds.json의 6개 빌드 × 각 적)
 python -m app.hunt --enemy dire_wolf_elite --kills 10 --n 50 --bot orig   # 연속 사냥 (체력 이어 감, 휴식 시간 포함 1마리당 시간)
+python -m app.styles --which elite --n 20          # 플레이 방식 비교 (원작형·탱커 없는 원작형·난전형·평타 연타형·각자 솔로형, 연속 사냥)
+python -m app.aggro --n 100                         # 어그로 이동 측정 (틈이 아닐 때 소드 스킬 헤이트 배율별, 딜러가 노려진 시간)
 python -m unittest discover -s tests -t .           # 테스트 (결정론 포함)
 ```
 
@@ -54,7 +56,7 @@ python -m unittest discover -s tests -t .           # 테스트 (결정론 포�
 - **넘어짐**: 넘어짐 태그 공격에 맞으면 확률로 넘어져 기상할 때까지 무방비. 가드로 막으면 걸리지 않는다.
 - **몬스터 고유 특징**: 비선공, 무리(옆·뒤로 돌기), 방향별 피해 배율(단단한 정면, 약점) 등. `docs/monsters.md`의 1구획 4종을 구현했다.
 - **장비**: 착용 무게(한도 = 6 + 근력 × 0.6, 넘으면 이동·공격 프레임 배수), 행동별 내구도 소모 (아이템 기획서).
-- 프레임, 프리모션 끊기, 경직 감쇠, 무력화, 무기 교체 재로드는 솔로 전투와 같다. 구현하며 채운 해석과 임시값은 `docs/decisions_combat.md`.
+- 프레임, 프리모션 끊기, 경직 감쇠, 무력화, 무기 교체 재로드는 솔로 전투와 같다. 구현하며 채운 해석과 임시값은 `docs/decisions_combat.md`. 진행 상황과 다음 할 일은 `docs/progress.md`.
 
 ## 구조
 
